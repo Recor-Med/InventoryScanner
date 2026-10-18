@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Resolves whichever identifier was supplied in the URL into the prefix
   // value (account number or contact email) used to filter inventory
-  // product lines, along with a human-readable label for status messages.
+  // product lines.
   async function resolveInventoryPrefix() {
     if (urlAccountId) {
       const res = await fetch(`${API_BASE_URL}/api/account?id=${encodeURIComponent(urlAccountId)}`);
@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!res.ok || !data.found || !data.accountNumber) {
         throw new Error(data.error || `Unable to resolve account id ${urlAccountId}`);
       }
-      return { prefix: data.accountNumber, label: data.name || data.accountNumber };
+      return { prefix: data.accountNumber };
     }
     if (urlContactId) {
       const res = await fetch(`${API_BASE_URL}/api/contact?id=${encodeURIComponent(urlContactId)}`);
@@ -130,10 +130,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!res.ok || !data.found || !data.email) {
         throw new Error(data.error || `Unable to resolve contact id ${urlContactId}`);
       }
-      return { prefix: data.email, label: data.name || data.email };
+      return { prefix: data.email };
     }
     if (legacyAccountNumber) {
-      return { prefix: legacyAccountNumber, label: legacyAccountNumber };
+      return { prefix: legacyAccountNumber };
     }
     return null;
   }
@@ -153,11 +153,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const resolved = await resolveInventoryPrefix();
-      confirmedAccountName = resolved.label;
-      output.textContent = `Loading inventory for ${resolved.label}...`;
+      output.textContent = 'Loading inventory...';
       await fetchInventoryProducts(resolved.prefix);
       populateInventoryProductTable();
-      output.textContent = `Ready to scan. Loaded ${inventoryProductItems.length} inventory line(s) for ${resolved.label}.`;
+      output.textContent = `Ready to scan. Loaded ${inventoryProductItems.length} inventory line(s).`;
     } catch (err) {
       console.error('Error fetching inventory product items:', err);
       output.textContent = `Ready to scan. Failed to load inventory: ${err.message}`;
@@ -180,7 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rawValue = input.value.trim();
 
     if (!rawValue) {
-      status.textContent = 'Please enter an account number or email address.';
+      status.textContent = 'Please enter an account number.';
       status.style.color = 'red';
       return;
     }
@@ -214,51 +213,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      const displayName = data.name || rawValue;
       const prefix = isEmail ? data.email : data.accountNumber;
+      confirmedAccount = prefix;
+      confirmedAccountName = null;
+      confirmedWarehouseCode = null;
 
-      status.innerHTML = `
-        Found: ${displayName} <br/>
-        Is this correct? 
-        <button id="confirmAccountBtn" class="bg-green-600 text-white px-3 py-1 rounded ml-2">Yes</button>
-        <button id="rejectAccountBtn" class="bg-red-600 text-white px-3 py-1 rounded ml-2">No</button>
-      `;
-      status.style.color = 'green';
+      output.textContent = 'Loading inventory product items...';
 
-      const confirmBtn = status.querySelector('#confirmAccountBtn');
-      const rejectBtn = status.querySelector('#rejectAccountBtn');
+      try {
+        await fetchInventoryProducts(prefix);
+        await fetchIds();
+        populateInventoryProductTable();
 
-      confirmBtn.addEventListener('click', async () => {
-        confirmedAccount = prefix;
-        confirmedAccountName = displayName;
-        confirmedWarehouseCode = null;
+        accountSection.classList.add('hidden');
+        tableView.classList.remove('hidden');
 
-        output.textContent = 'Loading inventory product items...';
-
-        try {
-          await fetchInventoryProducts(prefix);
-          await fetchIds();
-          populateInventoryProductTable();
-
-          accountSection.classList.add('hidden');
-          tableView.classList.remove('hidden');
-
-          output.textContent = `Confirmed: ${displayName}. Ready to scan.`;
-          updateViewState();
-        } catch (err) {
-          console.error("Error fetching inventory product items:", err);
-          alert("Failed to load inventory product data. Please try again.");
-        }
-      });
-
-      rejectBtn.addEventListener('click', () => {
-        confirmedAccount = null;
-        confirmedAccountName = null;
-        confirmedWarehouseCode = null;
-        input.value = '';
-        status.textContent = 'Please enter the correct account number or email address.';
-        status.style.color = 'darkorange';
-      });
+        status.textContent = 'Verified.';
+        status.style.color = 'green';
+        output.textContent = `Ready to scan. Loaded ${inventoryProductItems.length} inventory line(s).`;
+        updateViewState();
+      } catch (err) {
+        console.error("Error fetching inventory product items:", err);
+        alert("Failed to load inventory product data. Please try again.");
+      }
 
     } catch (err) {
       console.error('Network/Server Error:', err);

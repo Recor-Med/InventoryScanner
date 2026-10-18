@@ -8,12 +8,11 @@
 </head>
 <body class="bg-gray-100 text-gray-800 p-4">
 
-  <!-- Account Verification Section (shown when no account/contact id or
-       email is supplied via the URL - prompts the user to type in either an
-       account number or an email address) -->
+  <!-- Account Verification Section (shown when no account/contact id is
+       supplied via the URL) -->
   <div id="accountSection" class="max-w-md mx-auto bg-white shadow p-4 rounded-lg mb-6 hidden">
-    <label for="accountInput" class="block text-sm font-medium mb-2">Enter Account Number or Email Address:</label>
-    <input type="text" id="accountInput" placeholder="e.g. 123456 or name@example.com" class="w-full p-2 border border-gray-300 rounded mb-3" />
+    <label for="accountInput" class="block text-sm font-medium mb-2">Enter Account Number:</label>
+    <input type="text" id="accountInput" placeholder="e.g. 123456" class="w-full p-2 border border-gray-300 rounded mb-3" />
     <button id="verifyAccountBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded w-full">Verify</button>
     <div id="accountStatus" class="mt-3 font-semibold text-sm"></div>
   </div>
@@ -35,9 +34,6 @@
 
     <div id="output" class="text-center text-sm text-gray-700 mb-4">Click "Start Scanning"</div>
 
-    <!-- Confirmed Account Name Display -->
-    <div id="confirmedAccountName" class="text-center font-semibold text-lg mb-4 text-blue-700"></div>
-    
     <div id="tableSection" class="hidden"></div>
       <!-- <h2 class="text-xl font-semibold mb-2">Item Codes</h2> -->
       <div class="overflow-x-auto mb-4">
