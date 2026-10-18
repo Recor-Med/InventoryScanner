@@ -1,0 +1,11 @@
+# All node_modules
+node_modules/
+
+# macOS
+.DS_Store
+
+# Scanbot binaries
+scanbot-web-sdk-7.2.0.tgz
+
+# Scanbot bundle
+package/

@@ -1,0 +1,17 @@
+{
+  "name": "scanner",
+  "version": "1.0.0",
+  "description": "Static web app for scanning inventory using Scanbot SDK",
+  "dependencies": {
+    "scanbot-web-sdk": "^7.2.0"
+  },
+  "scripts": {
+    "start": "serve -l 3000 ."
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "serve": "^14.2.4",
+    "tailwindcss": "npm:@tailwindcss/cli@^4.1.14"
+  }
+}
