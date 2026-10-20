@@ -152,10 +152,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const storedConfirmedPrefix =
     !urlAccountId && !urlContactId && !legacyAccountNumber
-      ? getStoredConfirmedPrefix()
+      ? ''
       : '';
 
-  if (urlAccountId || urlContactId || legacyAccountNumber || storedConfirmedPrefix) {
+  if (urlAccountId || urlContactId || legacyAccountNumber) {
     // An identifier was supplied via the URL (from the Account page, the
     // Contact page, or a legacy direct-account-number link) - skip the
     // manual entry form entirely and resolve + load inventory straight away.
