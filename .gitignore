@@ -9,3 +9,5 @@ scanbot-web-sdk-7.2.0.tgz
 
 # Scanbot bundle
 package/
+# Local configuration with secrets
+local-config.js

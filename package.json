@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Static web app for scanning inventory using Scanbot SDK",
   "dependencies": {
-    "scanbot-web-sdk": "^7.2.0"
+    "scanbot-web-sdk": "^10.0.0"
   },
   "scripts": {
     "start": "serve -l 3000 ."

@@ -33,22 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
   const itemTableBody = document.querySelector('#itemTable tbody');
 
-  const licenseKey =
-  "oze+riwtsfpaOqdCCzdgCkYyjEFYPN" +
-  "L7C6JhRFE3WGAu8nc2c1v2hj2ga3Bi" +
-  "06C+zZBXYGH4g6eMjdYUC59Ghl7opc" +
-  "VD2O4bbx9EvmTvWv2CL55J28zO2JeL" +
-  "xichG6OBJql4xSU3nYGw679vs+FXUt" +
-  "P8+ILJryCkLvs4wXPPg/60NyOcZoDZ" +
-  "A7y8sw9ZieWXxNNkN8goSiN1TI6Jg3" +
-  "JY8PuiWIxxoMjS4nvQDRBGKcKnrUeb" +
-  "U2j2CCas4TQMGoDPZk8lwm7IOM2z7I" +
-  "jMjm/ITxSBq+MF+PHaqJCD2lP2up1c" +
-  "hqF0DcHXvnS+jSsdpeL+EZQ0U/d4Q0" +
-  "cGEcGL4Z6/1w==\nU2NhbmJvdFNESw" +
-  "pzY2FubmVyLnZlcnlhbm1lZC5jb218" +
-  "bG9jYWxob3N0CjE3OTkwMjA3OTkKNT" +
-  "EyCjg=\n";
+  const licenseKey = process.env.SDK_LICENSE_KEY || window.LOCAL_SDK_LICENSE_KEY || '';
 
   const today = new Date()
 
@@ -111,6 +96,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   const urlAccountId = (urlParams.get('accountId') || '').trim();
   const urlContactId = (urlParams.get('contactId') || '').trim();
   const legacyAccountNumber = (urlParams.get('account') || '').trim();
+  const CONFIRMED_PREFIX_STORAGE_KEY = 'inventoryScannerConfirmedPrefix';
+
+  function getStoredConfirmedPrefix() {
+    try {
+      return (sessionStorage.getItem(CONFIRMED_PREFIX_STORAGE_KEY) || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function setStoredConfirmedPrefix(prefix) {
+    try {
+      if (prefix) {
+        sessionStorage.setItem(CONFIRMED_PREFIX_STORAGE_KEY, prefix);
+      }
+    } catch {
+      // Ignore storage errors (e.g. disabled storage/private mode restrictions)
+    }
+  }
+
+  function clearStoredConfirmedPrefix() {
+    try {
+      sessionStorage.removeItem(CONFIRMED_PREFIX_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }
 
   // Resolves whichever identifier was supplied in the URL into the prefix
   // value (account number or contact email) used to filter inventory
@@ -138,13 +150,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     return null;
   }
 
-  if (urlAccountId || urlContactId || legacyAccountNumber) {
+  const storedConfirmedPrefix =
+    !urlAccountId && !urlContactId && !legacyAccountNumber
+      ? getStoredConfirmedPrefix()
+      : '';
+
+  if (urlAccountId || urlContactId || legacyAccountNumber || storedConfirmedPrefix) {
     // An identifier was supplied via the URL (from the Account page, the
     // Contact page, or a legacy direct-account-number link) - skip the
     // manual entry form entirely and resolve + load inventory straight away.
-    const resolvedIdentifier = urlAccountId || urlContactId || legacyAccountNumber;
-    confirmedAccount = resolvedIdentifier;
-    confirmedAccountName = resolvedIdentifier;
+    confirmedAccount = null;
+    confirmedAccountName = null;
     confirmedWarehouseCode = null;
 
     accountSection.classList.add('hidden');
@@ -152,19 +168,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     output.textContent = 'Loading inventory...';
 
     try {
-      const resolved = await resolveInventoryPrefix();
+      const resolved = storedConfirmedPrefix
+        ? { prefix: storedConfirmedPrefix }
+        : await resolveInventoryPrefix();
+      confirmedAccount = resolved.prefix;
+      confirmedAccountName = null;
+      setStoredConfirmedPrefix(resolved.prefix);
       output.textContent = 'Loading inventory...';
       await fetchInventoryProducts(resolved.prefix);
       populateInventoryProductTable();
       output.textContent = `Ready to scan. Loaded ${inventoryProductItems.length} inventory line(s).`;
     } catch (err) {
       console.error('Error fetching inventory product items:', err);
+      clearStoredConfirmedPrefix();
+      const input = document.getElementById('accountInput');
+      if (input) input.value = '';
+      accountSection.classList.remove('hidden');
+      tableView.classList.add('hidden');
       output.textContent = `Ready to scan. Failed to load inventory: ${err.message}`;
     }
   } else {
     // No identifier was supplied at all (e.g. the user navigated to the
     // bare scanner URL directly) - show the manual entry form so they can
     // type in either an account number or an email address.
+    clearStoredConfirmedPrefix();
+    const input = document.getElementById('accountInput');
+    if (input) input.value = '';
     accountSection.classList.remove('hidden');
     tableView.classList.add('hidden');
   }
@@ -217,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       confirmedAccount = prefix;
       confirmedAccountName = null;
       confirmedWarehouseCode = null;
+      setStoredConfirmedPrefix(prefix);
 
       output.textContent = 'Loading inventory product items...';
 
@@ -269,7 +299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <td data-label="#">${index + 1}</td>
         <td data-label="PRDS">${escapeHtml(item.sku || '')}</td>
         <td hidden data-label="Lot Number">${escapeHtml(item.lotSerial || '')}</td>
-        <td data-label="Lot Number/Serial Number">${escapeHtml(item.lotSerial || '')}</td>
+        <td hidden data-label="Lot/Serial No.">${escapeHtml(item.lotSerial || '')}</td>
         <td data-label="Expiry Date">${formatDate(item.expiry)}</td>
         <td data-label="Quantity">${item.quantity || 0}</td>
         <td data-label="Count">0</td>
@@ -531,7 +561,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <td data-label="#">${itemTableBody.children.length + 1}</td>
       <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
       <td hidden data-label="Lot Number">${escapeHtml(entry.reference)}</td>
-      <td data-label="Lot Number/Serial Number">${escapeHtml(lotSerialDisplay)}</td>
+      <td hidden data-label="Lot/Serial No.">${escapeHtml(lotSerialDisplay)}</td>
       <td data-label="Expiry Date">${escapeHtml(expiry || 'Unknown')}</td>
       <td data-label="Quantity">${quantity}</td>
       <td data-label="Count">1</td>
@@ -549,8 +579,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function formatDate(dateString) {
     if (!dateString) return '';
+
+    // Common Salesforce/ISO date formats (YYYY-MM-DD or full ISO datetime)
+    // are reformatted explicitly to avoid timezone shifting.
+    const isoLike = String(dateString).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoLike) {
+      const [, year, month, day] = isoLike;
+      return `${month}/${day}/${year}`;
+    }
+
+    // Fallback for other parseable date formats.
     const date = new Date(dateString);
-    return date.toISOString().split('T')[0];
+    if (Number.isNaN(date.getTime())) {
+      return String(dateString);
+    }
+
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${month}/${day}/${year}`;
   }
 
   verifyAccountBtn.addEventListener('click', verifyAccountNumber);
@@ -587,7 +634,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const codes = rows.map(row => ({
       sku: row.dataset.prds || '',
       description: '',
-      lot: row.querySelector('[data-label="Lot Number/Serial Number"]').textContent.trim(),
+      lot: row.querySelector('[data-label="Lot Number"]').textContent.trim(),
       expiry: row.querySelector('[data-label="Expiry Date"]').textContent.trim(),
       quantity: row.querySelector('[data-label="Quantity"]').textContent.trim(),
       count: parseInt(row.querySelector('[data-label="Count"]').textContent.trim(), 10) || 0
