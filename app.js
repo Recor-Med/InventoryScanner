@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // and/or live inventory lookups. The original functions are left intact
   // below, they are simply not invoked while these flags are false.
   const FEATURES = {
-    accountVerification: false,
+    accountVerification: true,
     inventoryLookup: false,
     // The Scanbot SDK defaults to locking the scanner to the rear/"environment"
     // facing camera (cameraModule: 'BACK'), which is what you want on a phone
