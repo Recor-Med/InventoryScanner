@@ -299,8 +299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       row.innerHTML = `
         <td data-label="#">${index + 1}</td>
         <td data-label="PRDS">${escapeHtml(item.sku || '')}</td>
-        <td hidden data-label="Lot Number">${escapeHtml(item.lotSerial || '')}</td>
-        <td hidden data-label="Lot/Serial No.">${escapeHtml(item.lotSerial || '')}</td>
+        <td data-label="Lot/Serial">${escapeHtml(item.lotSerial || '')}</td>
         <td data-label="Expiry Date">${formatDate(item.expiry)}</td>
         <td data-label="Quantity">${item.quantity || 0}</td>
         <td data-label="Count">0</td>
@@ -529,7 +528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .find(row => row.dataset.reference === entry.reference);
 
     if (existingRow) {
-      const countCell = existingRow.cells[6];
+      const countCell = existingRow.cells[5];
       countCell.textContent = Number(countCell.textContent) + 1;
       output.textContent = `Incremented count for ${entry.referenceType} ${entry.reference}`;
       output.style.color = 'green';
@@ -561,8 +560,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     row.innerHTML = `
       <td data-label="#">${itemTableBody.children.length + 1}</td>
       <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
-      <td hidden data-label="Lot Number">${escapeHtml(entry.reference)}</td>
-      <td hidden data-label="Lot/Serial No.">${escapeHtml(lotSerialDisplay)}</td>
+      <td data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
       <td data-label="Expiry Date">${escapeHtml(expiry || 'Unknown')}</td>
       <td data-label="Quantity">${quantity}</td>
       <td data-label="Count">1</td>
@@ -634,8 +632,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rows = Array.from(itemTableBody.querySelectorAll('tr'));
     const codes = rows.map(row => ({
       sku: row.dataset.prds || '',
-      description: '',
-      lot: row.querySelector('[data-label="Lot Number"]').textContent.trim(),
+      lotSerial: row.querySelector('[data-label="Lot/Serial"]').textContent.trim(),
       expiry: row.querySelector('[data-label="Expiry Date"]').textContent.trim(),
       quantity: row.querySelector('[data-label="Quantity"]').textContent.trim(),
       count: parseInt(row.querySelector('[data-label="Count"]').textContent.trim(), 10) || 0
@@ -649,7 +646,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.pendingSubmission = {
       account: confirmedAccount,
       accountName: confirmedAccountName,
-      warehouseCode: confirmedWarehouseCode,
       date: formattedDate,
       codes
     };
