@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
   const itemTableBody = document.querySelector('#itemTable tbody');
 
-  const licenseKey = process.env.SDK_LICENSE_KEY || window.LOCAL_SDK_LICENSE_KEY || '';
+  const licenseKey = window.LOCAL_SDK_LICENSE_KEY || '';
 
   const today = new Date()
 
@@ -154,6 +154,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     !urlAccountId && !urlContactId && !legacyAccountNumber
       ? ''
       : '';
+
+  console.log('Init check:', { urlAccountId, urlContactId, legacyAccountNumber, storedConfirmedPrefix });
 
   if (urlAccountId || urlContactId || legacyAccountNumber) {
     // An identifier was supplied via the URL (from the Account page, the
