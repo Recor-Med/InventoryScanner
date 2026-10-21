@@ -254,7 +254,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       try {
         await fetchInventoryProducts(prefix);
-        await fetchIds();
         populateInventoryProductTable();
 
         accountSection.classList.add('hidden');
