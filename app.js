@@ -400,6 +400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await fetchInventoryProducts(resolved.prefix);
       populateInventoryProductTable();
       output.textContent = `Ready to scan. Loaded ${inventoryProductItems.length} inventory line(s).`;
+      persistScanRecoveryState();
     } catch (err) {
       console.error('Error fetching inventory product items:', err);
       clearStoredConfirmedPrefix();
@@ -483,6 +484,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         status.style.color = 'green';
         output.textContent = `Ready to scan. Loaded ${inventoryProductItems.length} inventory line(s).`;
         updateViewState();
+        persistScanRecoveryState();
       } catch (err) {
         console.error("Error fetching inventory product items:", err);
         alert("Failed to load inventory product data. Please try again.");
@@ -567,9 +569,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // clean worker. To avoid losing the user's already-scanned items, we
   // persist the current table + account state to sessionStorage right
   // before reloading, and restore it once the page comes back up.
-  function persistScanRecoveryState() {
+  //
+  // This same persist/restore mechanism also doubles as general-purpose
+  // "survive a page refresh" support: it's called after every successful
+  // account confirmation and every scanned barcode, not just right before
+  // an error-triggered reload, so a manual refresh (or the browser/tab
+  // being closed and reopened within the same session) keeps the
+  // confirmed account and scanned items too.
+  function persistScanRecoveryState(reason = 'manual') {
     try {
       const state = {
+        reason,
         tableHtml: itemTableBody.innerHTML,
         confirmedAccount,
         confirmedAccountName,
@@ -578,6 +588,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       sessionStorage.setItem(SCAN_RECOVERY_STORAGE_KEY, JSON.stringify(state));
     } catch (e) {
       console.warn('Failed to persist scan recovery state:', e);
+    }
+  }
+
+  function clearPersistedScanState() {
+    try {
+      sessionStorage.removeItem(SCAN_RECOVERY_STORAGE_KEY);
+    } catch (e) {
+      console.warn('Failed to clear persisted scan state:', e);
     }
   }
 
@@ -611,8 +629,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       tableView.classList.remove('hidden');
       tableSection.classList.remove('hidden');
       scanningView.classList.add('hidden');
-      output.textContent = 'Camera reset after idle timeout - your scanned items were preserved. Tap "Scan Next" to continue.';
-      output.style.color = 'darkorange';
+      if (state.reason === 'recovery') {
+        output.textContent = 'Camera reset after idle timeout - your scanned items were preserved. Tap "Scan Next" to continue.';
+        output.style.color = 'darkorange';
+      } else if (itemTableBody.querySelectorAll('tr').length > 0) {
+        output.textContent = 'Welcome back - your confirmed account and scanned items were restored.';
+        output.style.color = 'green';
+      }
       updateViewState();
       return true;
     } catch (e) {
@@ -633,7 +656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     stopScannerHeartbeat();
     console.error('Triggering full page reload to recover scanner:', reason);
     output.textContent = 'Camera needs to restart - reloading page, your scanned items will be kept...';
-    persistScanRecoveryState();
+    persistScanRecoveryState('recovery');
     setTimeout(() => window.location.reload(), 600);
   }
 
@@ -905,6 +928,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     tableView.classList.remove('hidden');
     scanNextBtn.disabled = false;
     updateViewState();
+    persistScanRecoveryState();
 
     console.log('Barcode detected:', { code, format });
   }
@@ -1148,6 +1172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         confirmedAccount = null;
         confirmedAccountName = null;
         window.pendingSubmission = null;
+        clearPersistedScanState();
       } else {
         submissionMessage.textContent = 'Failed to submit table';
         console.error('Flow error:', data);
