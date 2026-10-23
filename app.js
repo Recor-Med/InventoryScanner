@@ -61,31 +61,108 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Keep scanner alive during idle periods to prevent camera suspension
   let scannerHeartbeatInterval = null;
+  let wakeLock = null;
+  let scannerActive = false; // true while we expect the camera to be running
+
+  // The Screen Wake Lock API prevents the screen (and therefore the camera
+  // feed) from being suspended by the OS/browser while scanning is active.
+  // This is what actually keeps the camera alive on mobile Safari/Chrome -
+  // merely polling the SDK object (the old "heartbeat") does nothing because
+  // it never touches the underlying MediaStream/video element.
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => {
+          console.log('Wake lock released');
+        });
+        console.log('Wake lock acquired');
+      }
+    } catch (e) {
+      console.warn('Could not acquire wake lock:', e);
+      wakeLock = null;
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLock) {
+        await wakeLock.release();
+      }
+    } catch (e) {
+      console.warn('Error releasing wake lock:', e);
+    } finally {
+      wakeLock = null;
+    }
+  }
+
+  // Checks whether the <video> element the SDK is rendering into is still
+  // actually receiving frames. The wake lock is automatically released by
+  // the browser whenever the tab/page is backgrounded (e.g. switching apps
+  // on a phone, locking the screen), which in turn can suspend the camera's
+  // MediaStream. When the page becomes visible again we re-acquire the wake
+  // lock and, if the video has actually stalled, restart the scanner.
+  function isVideoStreamHealthy() {
+    const video = document.querySelector('#video video');
+    if (!video) return false;
+    return !video.paused && !video.ended && video.readyState >= 2;
+  }
 
   function startScannerHeartbeat() {
     if (scannerHeartbeatInterval) return; // Already running
-    
-    scannerHeartbeatInterval = setInterval(() => {
-      if (barcodeScanner) {
-        try {
-          // No-op: just verify the scanner is still alive
-          // This keeps iOS/Safari from suspending camera access
-          if (typeof barcodeScanner.isReady === 'function' && barcodeScanner.isReady()) {
-            console.log('Scanner heartbeat: active');
-          }
-        } catch (e) {
-          console.warn('Scanner heartbeat check failed:', e);
-        }
+    scannerActive = true;
+    requestWakeLock();
+
+    scannerHeartbeatInterval = setInterval(async () => {
+      if (!scannerActive) return;
+      if (document.hidden) return; // nothing we can do while backgrounded
+
+      // Re-acquire the wake lock if it was dropped (e.g. OS dimmed the
+      // screen briefly) without the page having been fully hidden.
+      if (!wakeLock) {
+        await requestWakeLock();
       }
-    }, 40000); // Every 40 seconds
+
+      if (barcodeScanner && !isVideoStreamHealthy()) {
+        console.warn('Scanner heartbeat: video stream stalled, restarting camera...');
+        try {
+          await startScan();
+        } catch (e) {
+          console.warn('Scanner heartbeat restart failed:', e);
+        }
+      } else {
+        console.log('Scanner heartbeat: active');
+      }
+    }, 10000); // Check every 10 seconds
   }
 
   function stopScannerHeartbeat() {
+    scannerActive = false;
     if (scannerHeartbeatInterval) {
       clearInterval(scannerHeartbeatInterval);
       scannerHeartbeatInterval = null;
     }
+    releaseWakeLock();
   }
+
+  // When the page comes back into the foreground, re-acquire the wake lock
+  // (the browser force-releases it on backgrounding) and verify the camera
+  // actually resumed; if not, restart it.
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) return;
+    if (!scannerActive) return;
+
+    await requestWakeLock();
+
+    if (barcodeScanner && !isVideoStreamHealthy()) {
+      console.warn('Camera did not resume after returning to foreground, restarting...');
+      try {
+        await startScan();
+      } catch (e) {
+        console.warn('Failed to restart scanner after visibility change:', e);
+      }
+    }
+  });
 
   // Initialize Scanbot SDK
   async function initScanbot() {
