@@ -71,7 +71,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   let confirmedAccountName = null;
   let currentDeviceId = null;
   let lastScannedCode = null;
-  let confirmedWarehouseCode = null;
   let scanCooldown = false;
   let inventoryProductItems = [];
   let ids = [];
@@ -375,8 +374,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Skip the normal URL-param/manual-entry account resolution entirely if
   // we just restored scanned progress after a recovery reload - otherwise
-  // this would immediately reset confirmedAccount/confirmedWarehouseCode
-  // and flip the account/table views back, discarding everything
+  // this would immediately reset confirmedAccount and flip the
+  // account/table views back, discarding everything
   // restoreScanRecoveryStateIfPresent() just set up.
   if (!scanStateWasRestored) {
   if (urlAccountId || urlContactId || legacyAccountNumber) {
@@ -385,7 +384,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // manual entry form entirely and resolve + load inventory straight away.
     confirmedAccount = null;
     confirmedAccountName = null;
-    confirmedWarehouseCode = null;
 
     accountSection.classList.add('hidden');
     tableView.classList.remove('hidden');
@@ -470,7 +468,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const prefix = isEmail ? data.email : data.accountNumber;
       confirmedAccount = prefix;
       confirmedAccountName = null;
-      confirmedWarehouseCode = null;
       setStoredConfirmedPrefix(prefix);
 
       output.textContent = 'Loading inventory product items...';
@@ -576,7 +573,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         tableHtml: itemTableBody.innerHTML,
         confirmedAccount,
         confirmedAccountName,
-        confirmedWarehouseCode,
         inventoryProductItems,
       };
       sessionStorage.setItem(SCAN_RECOVERY_STORAGE_KEY, JSON.stringify(state));
@@ -600,7 +596,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const state = JSON.parse(raw);
       confirmedAccount = state.confirmedAccount || null;
       confirmedAccountName = state.confirmedAccountName || null;
-      confirmedWarehouseCode = state.confirmedWarehouseCode || null;
       inventoryProductItems = Array.isArray(state.inventoryProductItems) ? state.inventoryProductItems : [];
       if (state.tableHtml) {
         itemTableBody.innerHTML = state.tableHtml;
@@ -1152,7 +1147,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         scannedCodes.length = 0;
         confirmedAccount = null;
         confirmedAccountName = null;
-        confirmedWarehouseCode = null;
         window.pendingSubmission = null;
       } else {
         submissionMessage.textContent = 'Failed to submit table';
