@@ -1071,6 +1071,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       output.textContent = `Scanned ${entry.referenceType} ${entry.reference} (no inventory match found)`;
       output.style.color = 'darkorange';
+      lookupProductByLotSerial(entry.reference, row);
+    }
+  }
+
+  // Looks up Product_Part_Number__c (PRDS) directly from Salesforce by an
+  // exact Lot_Serial_Number__c match when the scanned item wasn't already
+  // found in the account's pre-loaded inventoryProductItems list. Patches
+  // the already-rendered row in place once the result comes back.
+  async function lookupProductByLotSerial(lotSerial, row) {
+    if (!lotSerial || !row || !row.isConnected) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/items/by-lot-serial?lotSerial=${encodeURIComponent(lotSerial)}`
+      );
+      if (!res.ok) {
+        console.warn('Lot/Serial lookup failed:', res.status, res.statusText);
+        return;
+      }
+
+      const data = await res.json();
+      const item = data.item;
+      if (!item || !row.isConnected) return;
+
+      const sku = item.sku || '';
+      row.dataset.prds = sku;
+      const prdsCell = row.querySelector('[data-label="PRDS"]');
+      if (prdsCell) {
+        prdsCell.textContent = sku || 'Unknown';
+      }
+
+      output.textContent = `Matched ${row.dataset.reference} via direct lookup: ${sku}`;
+      output.style.color = 'green';
+      persistScanRecoveryState();
+    } catch (err) {
+      console.error('Error looking up item by lot/serial:', err);
     }
   }
 
