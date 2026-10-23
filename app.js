@@ -437,6 +437,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     buttonSection.classList.toggle('hidden', !hasScans);
   }
 
+  // Creates (or replaces) the #video container div that the SDK renders
+  // its camera preview into. Pulled out into a helper since it's needed in
+  // multiple recovery paths below.
+  function recreateVideoContainer() {
+    const existing = document.getElementById('video');
+    const parent = existing ? existing.parentNode : document.getElementById('scanningView');
+    const fresh = document.createElement('div');
+    fresh.id = 'video';
+    fresh.style.width = '400px';
+    fresh.style.height = '300px';
+    fresh.style.background = 'black';
+    if (existing && parent) {
+      parent.replaceChild(fresh, existing);
+    } else if (parent) {
+      parent.appendChild(fresh);
+    }
+  }
+
+  function buildBarcodeScannerConfig() {
+    return {
+      containerId: 'video',
+      // Controls which camera module the SDK requests. By default the SDK
+      // locks to 'BACK' (rear/environment-facing camera). While
+      // lockRearCamera is false, request 'FRONT' instead so a laptop's
+      // built-in webcam / Continuity Camera / other non-rear camera can be
+      // used. Set FEATURES.lockRearCamera back to true to restore the
+      // original rear-camera-only behavior.
+      cameraConfiguration: {
+        cameraModule: FEATURES.lockRearCamera ? 'BACK' : 'FRONT'
+      },
+      showFinder: false,
+      onBarcodesDetected: (result) => {
+        if (result.barcodes && result.barcodes.length > 0) {
+          onBarcodeDetected(result.barcodes);
+        }
+      },
+      // finder: {
+      //   visible: true,
+      //   style: { _type: "FinderStrokedStyle", strokeColor: "green", strokeWidth: 3 }
+      // },
+      userGuidance: {
+        visible: true,
+        title: { text: "Scan item", color: "white" }
+      }
+    };
+  }
+
   async function startScan() {
     try {
       if (!scanbotSDK) {
@@ -446,8 +493,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       scanningView.classList.remove('hidden');
       tableView.classList.add('hidden');
-      output.textContent = 'Starting Scanbot camera...';
       scanNextBtn.disabled = true;
+
+      // Fast path: if the existing scanner's camera stream is still alive
+      // (e.g. we were only away for a moment and the wake lock kept the
+      // camera running), just reuse it instead of tearing everything down
+      // and re-requesting the camera - that full teardown/recreate is what
+      // causes the ~25-30s loading animation, and it's unnecessary when
+      // nothing actually went wrong with the stream.
+      if (barcodeScanner && isVideoStreamHealthy()) {
+        output.textContent = '';
+        try {
+          if (typeof barcodeScanner.resumeDetection === 'function') {
+            barcodeScanner.resumeDetection();
+          }
+        } catch (e) {
+          console.warn('resumeDetection failed, continuing with existing stream:', e);
+        }
+        startScannerHeartbeat();
+        scanNextBtn.disabled = false;
+        return;
+      }
+
+      output.textContent = 'Starting Scanbot camera...';
 
       if (barcodeScanner) {
         try {
@@ -458,69 +526,49 @@ document.addEventListener('DOMContentLoaded', async () => {
         barcodeScanner = null;
       }
 
-      // Recreate the video element from scratch to ensure clean state
-      const videoContainer = document.getElementById('scanningView');
-      let videoElement = document.getElementById('video');
-      const newVideoElement = document.createElement('div');
-      newVideoElement.id = 'video';
-      newVideoElement.style.width = '400px';
-      newVideoElement.style.height = '300px';
-      newVideoElement.style.background = 'black';
-      videoContainer.replaceChild(newVideoElement, videoElement);
+      recreateVideoContainer();
+      const config = buildBarcodeScannerConfig();
 
-      const config = {
-        containerId: 'video',
-        // Controls which camera module the SDK requests. By default the SDK
-        // locks to 'BACK' (rear/environment-facing camera). While
-        // lockRearCamera is false, request 'FRONT' instead so a laptop's
-        // built-in webcam / Continuity Camera / other non-rear camera can be
-        // used. Set FEATURES.lockRearCamera back to true to restore the
-        // original rear-camera-only behavior.
-        cameraConfiguration: {
-          cameraModule: FEATURES.lockRearCamera ? 'BACK' : 'FRONT'
-        },
-        showFinder: false,
-        onBarcodesDetected: (result) => {
-          if (result.barcodes && result.barcodes.length > 0) {
-            onBarcodeDetected(result.barcodes);
+      // Camera creation can fail transiently right after the OS/browser
+      // suspends a backgrounded tab (the stream needs a moment to be
+      // reclaimed). Retry a couple of times with a short delay - this is
+      // fast (no WASM/engine reload) and resolves the vast majority of
+      // post-idle failures without ever touching the expensive full SDK
+      // reinitialization below.
+      const maxQuickRetries = 2;
+      let lastErr = null;
+      for (let attempt = 0; attempt <= maxQuickRetries; attempt++) {
+        try {
+          if (attempt > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            recreateVideoContainer();
           }
-        },
-        // finder: {
-        //   visible: true,
-        //   style: { _type: "FinderStrokedStyle", strokeColor: "green", strokeWidth: 3 }
-        // },
-        userGuidance: {
-          visible: true,
-          title: { text: "Scan item", color: "white" }
+          barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
+          console.log(`Barcode scanner created${attempt > 0 ? ` (quick retry ${attempt})` : ''}`);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`Scanner creation attempt ${attempt + 1} failed:`, err);
+          barcodeScanner = null;
         }
-      };
+      }
 
-      try {
-        barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
-        console.log('Barcode scanner created:', barcodeScanner);
+      if (!lastErr) {
         startScannerHeartbeat(); // Keep camera alive during scanning
-      } catch (createErr) {
-        // Scanner creation failed (likely camera access revoked after inactivity)
-        // Try a full recovery: dispose everything and reinitialize
-        console.warn('Scanner creation failed, attempting recovery:', createErr);
-        barcodeScanner = null;
-        
+      } else {
+        // All quick retries failed - fall back to a full SDK reinitialization.
+        // This reloads the WASM engine and is genuinely slow (~25-30s), so
+        // it's only attempted as a last resort.
+        console.warn('Quick retries exhausted, attempting full SDK recovery:', lastErr);
+        output.textContent = 'Recovering scanner, please wait...';
+
         try {
           await initScanbot();
-          // Recreate video element again after SDK reinit
-          let videoElement2 = document.getElementById('video');
-          const newVideoElement2 = document.createElement('div');
-          newVideoElement2.id = 'video';
-          newVideoElement2.style.width = '400px';
-          newVideoElement2.style.height = '300px';
-          newVideoElement2.style.background = 'black';
-          if (videoElement2 && videoElement2.parentNode) {
-            videoElement2.parentNode.replaceChild(newVideoElement2, videoElement2);
-          }
-          
-          // Try creating scanner again
+          recreateVideoContainer();
           barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
-          console.log('Scanner recovered after reinit');
+          console.log('Scanner recovered after full reinit');
+          startScannerHeartbeat();
         } catch (recoveryErr) {
           console.error('Recovery failed:', recoveryErr);
           stopScannerHeartbeat();
