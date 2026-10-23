@@ -33,7 +33,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
   const itemTableBody = document.querySelector('#itemTable tbody');
 
-  const licenseKey = window.LOCAL_SDK_LICENSE_KEY || '';
+  // The Scanbot SDK license key
+  const licenseKey = window.LOCAL_SDK_LICENSE_KEY ||
+    "eyJpZCI6IkI4QTAwODI4LTI0MTYtNDk3QS1BN0ZELTdDMkMwRkY0M0Y4QyIsInR5cGUiOiJPRkZMSU5FIiwiYXBwSWRzIjpbImxvY2FsaG9zdCIsInNjYW5uZXIucmVjb3JtZWRpY2FsLmNvbSJdLCJleHBpcmF0aW9uVGltZXN0YW1wIjoxODIyMTc2MDAwMDAwLCJmZWF0dXJlcyI6WyJCYXJjb2RlU2Nhbm5lciJdLCJwbGF0Zm9ybXMiOlsiV2ViQXNzZW1ibHkiXSwidmFsaWRGcm9tVGltZXN0YW1wIjoxNzkwNzI2NDAwMDAwLCJncmFjZVBlcmlvZE1zIjo1MTg0MDAwMDAwLCJtZXRhZGF0YSI6eyJsaWNlbnNlZSI6IlJlY29yIE1lZGljYWwgSW5jIiwibGljZW5zZUlkIjoiYTVqT0swMDAwMDFtbU9MWUFZIiwib3BlcmF0b3IiOiJATGF1cmVsIn19.MEYCIQDaaciootHlOv4IQ1tXsb-V11BhYTjChBrntHer2xoXhgIhANpZGsBuIaBbe6XPVuGzulb2_9Sxt9FKRpt9fGIQRcom";
 
   const today = new Date()
 
