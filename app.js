@@ -581,6 +581,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       const state = {
         reason,
         tableHtml: itemTableBody.innerHTML,
+        // The table can legitimately contain rows the user hasn't scanned
+        // anything for yet (populateInventoryProductTable() pre-fills it
+        // with every inventory line for the account, each starting at
+        // Count 0), so the DOM row count alone can't be used to determine
+        // whether anything has actually been scanned. Persist the real
+        // scannedCodes.length explicitly instead.
+        scannedCodesCount: scannedCodes.length,
         confirmedAccount,
         confirmedAccountName,
         inventoryProductItems,
@@ -617,12 +624,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       inventoryProductItems = Array.isArray(state.inventoryProductItems) ? state.inventoryProductItems : [];
       if (state.tableHtml) {
         itemTableBody.innerHTML = state.tableHtml;
-        // scannedCodes only needs to reflect "how many rows exist" for
-        // updateViewState()'s hasScans check; the actual row data already
-        // lives in the restored DOM.
+        // scannedCodes only needs to reflect "how many items were actually
+        // scanned" for updateViewState()'s hasScans check; the actual row
+        // data already lives in the restored DOM. Use the persisted real
+        // count rather than the DOM row count, since the table may also
+        // contain pre-populated (unscanned) inventory rows.
         scannedCodes.length = 0;
-        const restoredRowCount = itemTableBody.querySelectorAll('tr').length;
-        for (let i = 0; i < restoredRowCount; i++) scannedCodes.push(true);
+        const restoredScanCount = Number.isFinite(state.scannedCodesCount) ? state.scannedCodesCount : 0;
+        for (let i = 0; i < restoredScanCount; i++) scannedCodes.push(true);
       }
 
       accountSection.classList.add('hidden');
@@ -632,7 +641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (state.reason === 'recovery') {
         output.textContent = 'Camera reset after idle timeout - your scanned items were preserved. Tap "Scan Next" to continue.';
         output.style.color = 'darkorange';
-      } else if (itemTableBody.querySelectorAll('tr').length > 0) {
+      } else if (scannedCodes.length > 0) {
         output.textContent = 'Welcome back - your confirmed account and scanned items were restored.';
         output.style.color = 'green';
       }
