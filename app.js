@@ -58,6 +58,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // non-functional with no error surfaced.
   let startScanPromise = null;
 
+  // Set once we've decided the camera/SDK is unrecoverable in-page and a
+  // reload has been triggered, so the heartbeat/visibilitychange handlers
+  // don't try to trigger a second overlapping reload.
+  let reloadRecoveryTriggered = false;
+  const SCAN_RECOVERY_STORAGE_KEY = 'inventoryScannerRecoveryState';
+
   let formattedDate = today.toISOString().split('T')[0];
   let confirmedAccount = null;
   let confirmedAccountName = null;
@@ -236,11 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (barcodeScanner && !(await isVideoStreamHealthy())) {
         console.warn('Scanner heartbeat: video stream stalled, restarting camera...');
-        try {
-          await startScan();
-        } catch (e) {
-          console.warn('Scanner heartbeat restart failed:', e);
-        }
+        await startScan();
       } else {
         console.log('Scanner heartbeat: active');
       }
@@ -267,11 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (barcodeScanner && !(await isVideoStreamHealthy())) {
       console.warn('Camera did not resume after returning to foreground, restarting...');
-      try {
-        await startScan();
-      } catch (e) {
-        console.warn('Failed to restart scanner after visibility change:', e);
-      }
+      await startScan();
     }
   });
 
@@ -292,6 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   await initScanbot();
+  restoreScanRecoveryStateIfPresent();
 
   // The front end is reached via a link from one of two Salesforce pages:
   //  - The Account page, which supplies the Account's record Id as
@@ -548,6 +547,90 @@ document.addEventListener('DOMContentLoaded', async () => {
     buttonSection.classList.toggle('hidden', !hasScans);
   }
 
+  // The Scanbot SDK has no supported way to tear down/terminate a worker
+  // once ScanbotSDK.initialize() has created one (there is no dispose() on
+  // the SDK itself, only on individual scanner handles). That means calling
+  // initScanbot() again to "recover" from a broken scanner leaks a brand
+  // new worker on top of the old, still-alive one - which in practice is
+  // what was causing the repeating "Your license is not valid" errors:
+  // each extra worker appears to compete for/corrupt the license's
+  // single-active-feature validation, so every subsequent attempt fails
+  // the same way, forever, every time the heartbeat fires.
+  //
+  // The only reliable fix is a full page reload, which guarantees a single
+  // clean worker. To avoid losing the user's already-scanned items, we
+  // persist the current table + account state to sessionStorage right
+  // before reloading, and restore it once the page comes back up.
+  function persistScanRecoveryState() {
+    try {
+      const state = {
+        tableHtml: itemTableBody.innerHTML,
+        confirmedAccount,
+        confirmedAccountName,
+        confirmedWarehouseCode,
+        inventoryProductItems,
+      };
+      sessionStorage.setItem(SCAN_RECOVERY_STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn('Failed to persist scan recovery state:', e);
+    }
+  }
+
+  function restoreScanRecoveryStateIfPresent() {
+    let raw;
+    try {
+      raw = sessionStorage.getItem(SCAN_RECOVERY_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+
+    sessionStorage.removeItem(SCAN_RECOVERY_STORAGE_KEY);
+
+    try {
+      const state = JSON.parse(raw);
+      confirmedAccount = state.confirmedAccount || null;
+      confirmedAccountName = state.confirmedAccountName || null;
+      confirmedWarehouseCode = state.confirmedWarehouseCode || null;
+      inventoryProductItems = Array.isArray(state.inventoryProductItems) ? state.inventoryProductItems : [];
+      if (state.tableHtml) {
+        itemTableBody.innerHTML = state.tableHtml;
+        // scannedCodes only needs to reflect "how many rows exist" for
+        // updateViewState()'s hasScans check; the actual row data already
+        // lives in the restored DOM.
+        scannedCodes.length = 0;
+        const restoredRowCount = itemTableBody.querySelectorAll('tr').length;
+        for (let i = 0; i < restoredRowCount; i++) scannedCodes.push(true);
+      }
+
+      accountSection.classList.add('hidden');
+      tableView.classList.remove('hidden');
+      tableSection.classList.remove('hidden');
+      scanningView.classList.add('hidden');
+      output.textContent = 'Camera reset after idle timeout - your scanned items were preserved. Tap "Scan Next" to continue.';
+      output.style.color = 'darkorange';
+      updateViewState();
+    } catch (e) {
+      console.warn('Failed to restore scan recovery state:', e);
+    }
+  }
+
+  // Last-resort recovery: the in-page SDK state is unrecoverable (repeated
+  // scanner creation failures, typically surfaced as a licensing/feature
+  // error after the worker was suspended/duplicated while backgrounded).
+  // Persist progress and force a full reload to get a guaranteed-clean SDK
+  // worker instance.
+  function triggerReloadRecovery(reason) {
+    if (reloadRecoveryTriggered) return;
+    reloadRecoveryTriggered = true;
+    scannerActive = false;
+    stopScannerHeartbeat();
+    console.error('Triggering full page reload to recover scanner:', reason);
+    output.textContent = 'Camera needs to restart - reloading page, your scanned items will be kept...';
+    persistScanRecoveryState();
+    setTimeout(() => window.location.reload(), 600);
+  }
+
   // Creates (or replaces) the #video container div that the SDK renders
   // its camera preview into. Pulled out into a helper since it's needed in
   // multiple recovery paths below.
@@ -698,40 +781,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (err) {
           lastErr = err;
           console.warn(`Scanner creation attempt ${attempt + 1} failed:`, err);
+          // A license/feature validation error means the SDK worker itself is
+          // in a bad state (this has been observed after the worker gets
+          // suspended or duplicated while the tab was backgrounded) -
+          // retrying createBarcodeScanner() on the same broken instance will
+          // just repeat the same failure, so stop burning quick-retry
+          // attempts and go straight to the escalation path below.
+          if (/license/i.test(String(err?.message || err))) {
+            break;
+          }
         }
       }
 
       if (!lastErr) {
         startScannerHeartbeat(); // Keep camera alive during scanning
       } else {
-        // All quick retries failed - fall back to a full SDK reinitialization.
-        // This reloads the WASM engine and is genuinely slow (~25-30s), so
-        // it's only attempted as a last resort.
-        console.warn('Quick retries exhausted, attempting full SDK recovery:', lastErr);
-        output.textContent = 'Recovering scanner, please wait...';
-
-        try {
-          await initScanbot();
-          recreateVideoContainer();
-          barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
-          await new Promise(resolve => setTimeout(resolve, 400));
-          if (!(await isVideoStreamHealthy())) {
-            throw new Error('Scanner recreated after full reinit but camera stream is not producing frames');
-          }
-          console.log('Scanner recovered after full reinit');
-          startScannerHeartbeat();
-        } catch (recoveryErr) {
-          console.error('Recovery failed:', recoveryErr);
-          stopScannerHeartbeat();
-          output.textContent = 'Failed to recover scanner. Please refresh the page.';
-          scanningView.classList.add('hidden');
-          tableView.classList.remove('hidden');
-          scanNextBtn.disabled = false;
-          return;
-        }
+        // Quick retries failed (or we fast-failed on a license/feature
+        // error). ScanbotSDK.initialize() has no supported way to dispose
+        // the SDK/worker it created, so previously this fell back to
+        // calling initScanbot() again to "fully reinitialize" - but that
+        // just leaks another worker on top of the broken one without ever
+        // freeing it, which corrupts the license's active-feature tracking
+        // and makes every subsequent attempt (including the next
+        // heartbeat tick) fail identically forever. A full page reload is
+        // the only way to guarantee a single clean worker, so that's what
+        // we do here instead, after preserving the user's scanned progress.
+        triggerReloadRecovery(lastErr);
+        return;
       }
     } catch (err) {
       console.error('Error while starting scanner:', err);
+      if (/license/i.test(String(err?.message || err))) {
+        triggerReloadRecovery(err);
+        return;
+      }
       stopScannerHeartbeat();
       output.textContent = 'Unable to start scanner. See console.';
       scanningView.classList.add('hidden');
