@@ -161,21 +161,49 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function isVideoStreamHealthy() {
     const video = document.querySelector('#video video');
-    if (!video) return false;
-    if (video.paused || video.ended || video.readyState < 2) return false;
+    if (!video) {
+      console.log('[healthcheck] no <video> element found');
+      return false;
+    }
+
+    // Mobile Safari/Chrome frequently auto-pause the <video> element itself
+    // when the tab is backgrounded, even though the underlying MediaStream
+    // track is still 'live' and the camera hardware was never released. In
+    // that case a plain video.play() resumes it immediately - much cheaper
+    // than tearing down and recreating the whole scanner. Try that first.
+    if (video.paused && !video.ended) {
+      try {
+        await video.play();
+        console.log('[healthcheck] video was paused, resumed via video.play()');
+      } catch (e) {
+        console.warn('[healthcheck] video.play() resume attempt failed:', e);
+      }
+    }
+
+    if (video.paused || video.ended || video.readyState < 2) {
+      console.log('[healthcheck] unhealthy: paused=%s ended=%s readyState=%s', video.paused, video.ended, video.readyState);
+      return false;
+    }
 
     const stream = video.srcObject;
     if (stream instanceof MediaStream) {
       const tracks = typeof stream.getVideoTracks === 'function' ? stream.getVideoTracks() : [];
       if (tracks.length === 0 || tracks.some(track => track.readyState !== 'live')) {
+        console.log('[healthcheck] unhealthy: video track(s) not live', tracks.map(t => t.readyState));
         return false;
       }
     }
 
     const framesDelivered = await countVideoFrames(video, 350);
-    if (video.paused || video.ended) return false;
+    if (video.paused || video.ended) {
+      console.log('[healthcheck] unhealthy: video paused/ended during frame count');
+      return false;
+    }
 
     if (framesDelivered !== null) {
+      if (framesDelivered <= 0) {
+        console.log('[healthcheck] unhealthy: 0 frames delivered in 350ms window');
+      }
       return framesDelivered > 0;
     }
 
@@ -184,7 +212,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const before = video.currentTime;
     await new Promise(resolve => setTimeout(resolve, 300));
     if (video.paused || video.ended) return false;
-    return video.currentTime !== before;
+    const healthy = video.currentTime !== before;
+    if (!healthy) {
+      console.log('[healthcheck] unhealthy: currentTime not advancing (fallback check)');
+    }
+    return healthy;
   }
 
   function startScannerHeartbeat() {
