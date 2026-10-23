@@ -354,6 +354,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         barcodeScanner = null;
       }
 
+      // Recreate the video element from scratch to ensure clean state
+      const videoContainer = document.getElementById('scanningView');
+      let videoElement = document.getElementById('video');
+      const newVideoElement = document.createElement('div');
+      newVideoElement.id = 'video';
+      newVideoElement.style.width = '400px';
+      newVideoElement.style.height = '300px';
+      newVideoElement.style.background = 'black';
+      videoContainer.replaceChild(newVideoElement, videoElement);
+
       const config = {
         containerId: 'video',
         // Controls which camera module the SDK requests. By default the SDK
