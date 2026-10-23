@@ -667,6 +667,24 @@ document.addEventListener('DOMContentLoaded', async () => {
           onBarcodeDetected(result.barcodes);
         }
       },
+      // Critical: without this, errors raised by the SDK's *ongoing*
+      // detection loop (as opposed to errors from createBarcodeScanner()
+      // itself) are never surfaced to our code at all - they just get
+      // logged as uncaught worker errors in the console, repeating on
+      // every detection frame, forever. This is exactly what was causing
+      // the endlessly repeating "Your license is not valid" error: the
+      // scanner was created successfully (so our retry/health-check logic
+      // never triggered), but every detection cycle afterward failed
+      // internally with no way for us to react to it. Wiring onError lets
+      // us detect this and force the reload-based recovery immediately
+      // instead of leaving the camera silently broken.
+      onError: (e) => {
+        console.error('Scanbot scanner reported an internal error:', e);
+        const message = String(e?.message || e || '');
+        if (/license/i.test(message)) {
+          triggerReloadRecovery(e);
+        }
+      },
       // finder: {
       //   visible: true,
       //   style: { _type: "FinderStrokedStyle", strokeColor: "green", strokeWidth: 3 }
