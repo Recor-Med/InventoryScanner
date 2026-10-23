@@ -1045,7 +1045,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       : null;
 
     const sku = matchedItem?.sku || '';
-    const expiry = matchedItem ? formatDate(matchedItem.expiry) : (entry.extracted.expiry || '');
+    const expiry = formatDate(matchedItem ? matchedItem.expiry : entry.extracted.expiry);
     const quantity = matchedItem ? (Number(matchedItem.quantity) || 0) : 0;
     // Prefer the Lot_Serial_Number__c value returned from the API (matchedItem.lotSerial)
     // for the visible column; fall back to the raw scanned reference if no match was found.
@@ -1076,6 +1076,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function formatDate(dateString) {
     if (!dateString) return '';
+
+    // GS1 barcode expiry dates (Application Identifier 17) are encoded as
+    // a 6-digit YYMMDD string, e.g. "260110" for 2026-01-10. This is
+    // distinct from the Salesforce/ISO date formats handled below, so it
+    // needs its own explicit parsing rather than falling through to
+    // `new Date(dateString)`, which can't reliably interpret a bare
+    // 6-digit number as a date at all.
+    const gs1Like = String(dateString).trim().match(/^(\d{2})(\d{2})(\d{2})$/);
+    if (gs1Like) {
+      const [, yy, mm, dd] = gs1Like;
+      // GS1 General Specifications: YY is interpreted as 2000-2099 for this
+      // use case (pharma/medical device expiry dates are always in the
+      // future relative to today, never 1900s).
+      const year = 2000 + Number(yy);
+      return `${mm}/${dd}/${year}`;
+    }
 
     // Common Salesforce/ISO date formats (YYYY-MM-DD or full ISO datetime)
     // are reformatted explicitly to avoid timezone shifting.
