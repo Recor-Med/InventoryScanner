@@ -102,10 +102,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   // on a phone, locking the screen), which in turn can suspend the camera's
   // MediaStream. When the page becomes visible again we re-acquire the wake
   // lock and, if the video has actually stalled, restart the scanner.
-  function isVideoStreamHealthy() {
+  //
+  // Just checking the <video> element's paused/ended/readyState flags is not
+  // reliable: after the OS suspends the underlying camera hardware (e.g.
+  // after the screen locks for a while), the element often keeps reporting
+  // those same "healthy" values while just displaying a frozen last frame.
+  // So we also check that the MediaStream's tracks are still 'live', and
+  // actually confirm new frames are arriving by sampling currentTime twice.
+  async function isVideoStreamHealthy() {
     const video = document.querySelector('#video video');
     if (!video) return false;
-    return !video.paused && !video.ended && video.readyState >= 2;
+    if (video.paused || video.ended || video.readyState < 2) return false;
+
+    const stream = video.srcObject;
+    if (stream instanceof MediaStream) {
+      const tracks = typeof stream.getVideoTracks === 'function' ? stream.getVideoTracks() : [];
+      if (tracks.length === 0 || tracks.some(track => track.readyState !== 'live')) {
+        return false;
+      }
+    }
+
+    // Confirm frames are actually advancing rather than a frozen last frame.
+    const before = video.currentTime;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    if (video.paused || video.ended) return false;
+    const after = video.currentTime;
+    return after !== before;
   }
 
   function startScannerHeartbeat() {
@@ -123,7 +145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await requestWakeLock();
       }
 
-      if (barcodeScanner && !isVideoStreamHealthy()) {
+      if (barcodeScanner && !(await isVideoStreamHealthy())) {
         console.warn('Scanner heartbeat: video stream stalled, restarting camera...');
         try {
           await startScan();
@@ -154,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await requestWakeLock();
 
-    if (barcodeScanner && !isVideoStreamHealthy()) {
+    if (barcodeScanner && !(await isVideoStreamHealthy())) {
       console.warn('Camera did not resume after returning to foreground, restarting...');
       try {
         await startScan();
@@ -501,7 +523,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // and re-requesting the camera - that full teardown/recreate is what
       // causes the ~25-30s loading animation, and it's unnecessary when
       // nothing actually went wrong with the stream.
-      if (barcodeScanner && isVideoStreamHealthy()) {
+      if (barcodeScanner && (await isVideoStreamHealthy())) {
         output.textContent = '';
         try {
           if (typeof barcodeScanner.resumeDetection === 'function') {
@@ -810,7 +832,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   cancelScanBtn.addEventListener('click', async () => {
-    if (barcodeScanner) await barcodeScanner.dispose();
+    stopScannerHeartbeat();
+    if (barcodeScanner) {
+      try {
+        await barcodeScanner.dispose();
+      } catch (e) {
+        console.warn('Error disposing scanner on cancel:', e);
+      }
+      barcodeScanner = null;
+    }
     scanningView.classList.add('hidden');
     tableView.classList.remove('hidden');
     output.textContent = 'Scan cancelled.';
