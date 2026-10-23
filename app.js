@@ -49,6 +49,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let barcodeScannerController = null;
 
+  // Guards against startScan() being invoked concurrently from multiple
+  // triggers (the heartbeat interval, the visibilitychange handler, and the
+  // user clicking "Scan Next" can all fire close together after the app
+  // resumes from idle). Without this, two overlapping calls can race on the
+  // shared barcodeScanner reference - e.g. one call disposes the scanner
+  // just after another has created a new one, silently leaving the camera
+  // non-functional with no error surfaced.
+  let startScanPromise = null;
+
   let formattedDate = today.toISOString().split('T')[0];
   let confirmedAccount = null;
   let confirmedAccountName = null;
@@ -97,18 +106,59 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Checks whether the <video> element the SDK is rendering into is still
-  // actually receiving frames. The wake lock is automatically released by
-  // the browser whenever the tab/page is backgrounded (e.g. switching apps
-  // on a phone, locking the screen), which in turn can suspend the camera's
-  // MediaStream. When the page becomes visible again we re-acquire the wake
-  // lock and, if the video has actually stalled, restart the scanner.
+  // actually receiving new camera frames. The wake lock is automatically
+  // released by the browser whenever the tab/page is backgrounded (e.g.
+  // switching apps on a phone, locking the screen), which in turn can
+  // suspend the camera's MediaStream. When the page becomes visible again
+  // we re-acquire the wake lock and, if the video has actually stalled,
+  // restart the scanner.
   //
-  // Just checking the <video> element's paused/ended/readyState flags is not
-  // reliable: after the OS suspends the underlying camera hardware (e.g.
-  // after the screen locks for a while), the element often keeps reporting
-  // those same "healthy" values while just displaying a frozen last frame.
-  // So we also check that the MediaStream's tracks are still 'live', and
-  // actually confirm new frames are arriving by sampling currentTime twice.
+  // IMPORTANT: checking the <video> element's paused/ended/readyState flags,
+  // or even sampling video.currentTime, is NOT reliable for a live
+  // MediaStream. Unlike a regular video file, currentTime on a live stream
+  // just advances with wall-clock time - it keeps ticking even if the
+  // decoder is stuck rendering a frozen last frame, so it will falsely
+  // report "healthy" exactly in the case we care about (camera suspended by
+  // the OS after idle). We instead count actual delivered frames using
+  // requestVideoFrameCallback (Safari 15.4+/Chrome), falling back to the
+  // webkit/moz decoded-frame counters, and only fall back to the weaker
+  // currentTime heuristic if none of those APIs are available.
+  function countVideoFrames(video, windowMs) {
+    return new Promise((resolve) => {
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        let count = 0;
+        let cancelled = false;
+        const onFrame = () => {
+          if (cancelled) return;
+          count++;
+          handle = video.requestVideoFrameCallback(onFrame);
+        };
+        let handle = video.requestVideoFrameCallback(onFrame);
+        setTimeout(() => {
+          cancelled = true;
+          if (typeof video.cancelVideoFrameCallback === 'function') {
+            try { video.cancelVideoFrameCallback(handle); } catch {}
+          }
+          resolve(count);
+        }, windowMs);
+        return;
+      }
+
+      const getDecodedFrameCount = () =>
+        video.webkitDecodedFrameCount ?? video.mozDecodedFrames ?? null;
+
+      const before = getDecodedFrameCount();
+      if (before === null) {
+        resolve(null); // No frame-counting API available at all.
+        return;
+      }
+      setTimeout(() => {
+        const after = getDecodedFrameCount();
+        resolve(after !== null ? after - before : null);
+      }, windowMs);
+    });
+  }
+
   async function isVideoStreamHealthy() {
     const video = document.querySelector('#video video');
     if (!video) return false;
@@ -122,12 +172,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Confirm frames are actually advancing rather than a frozen last frame.
+    const framesDelivered = await countVideoFrames(video, 350);
+    if (video.paused || video.ended) return false;
+
+    if (framesDelivered !== null) {
+      return framesDelivered > 0;
+    }
+
+    // Last-resort fallback when no frame-counting API exists: at least
+    // confirm currentTime is advancing (weak, but better than nothing).
     const before = video.currentTime;
     await new Promise(resolve => setTimeout(resolve, 300));
     if (video.paused || video.ended) return false;
-    const after = video.currentTime;
-    return after !== before;
+    return video.currentTime !== before;
   }
 
   function startScannerHeartbeat() {
@@ -507,6 +564,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function startScan() {
+    // If a startScan() call is already in flight (triggered by the
+    // heartbeat, a visibilitychange recovery, or a user click), wait for it
+    // to finish and reuse its outcome instead of starting a second,
+    // overlapping attempt that would race on the shared barcodeScanner
+    // reference.
+    if (startScanPromise) {
+      return startScanPromise;
+    }
+    startScanPromise = runStartScan();
+    try {
+      await startScanPromise;
+    } finally {
+      startScanPromise = null;
+    }
+  }
+
+  async function runStartScan() {
     try {
       if (!scanbotSDK) {
         output.textContent = 'Scanbot SDK not ready.';
