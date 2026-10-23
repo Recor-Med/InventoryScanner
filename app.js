@@ -637,6 +637,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         output.style.color = 'green';
       }
       updateViewState();
+
+      // restoreScanRecoveryStateIfPresent() above already removed the
+      // stored entry (so a mid-restore failure can't get stuck replaying
+      // forever) - immediately write it straight back now that the
+      // restore succeeded. Without this, the very next refresh would find
+      // nothing in sessionStorage (it was "consumed" by this restore) and
+      // fall back to the normal account-entry flow, discarding everything
+      // that was just restored - which is exactly the "works once, then
+      // resets on the second refresh" behavior this fixes.
+      persistScanRecoveryState('manual');
       return true;
     } catch (e) {
       console.warn('Failed to restore scan recovery state:', e);
