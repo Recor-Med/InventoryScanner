@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   await initScanbot();
-  restoreScanRecoveryStateIfPresent();
+  const scanStateWasRestored = restoreScanRecoveryStateIfPresent();
 
   // The front end is reached via a link from one of two Salesforce pages:
   //  - The Account page, which supplies the Account's record Id as
@@ -369,8 +369,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       ? ''
       : '';
 
-  console.log('Init check:', { urlAccountId, urlContactId, legacyAccountNumber, storedConfirmedPrefix });
+  console.log('Init check:', { urlAccountId, urlContactId, legacyAccountNumber, storedConfirmedPrefix, scanStateWasRestored });
 
+  // Skip the normal URL-param/manual-entry account resolution entirely if
+  // we just restored scanned progress after a recovery reload - otherwise
+  // this would immediately reset confirmedAccount/confirmedWarehouseCode
+  // and flip the account/table views back, discarding everything
+  // restoreScanRecoveryStateIfPresent() just set up.
+  if (!scanStateWasRestored) {
   if (urlAccountId || urlContactId || legacyAccountNumber) {
     // An identifier was supplied via the URL (from the Account page, the
     // Contact page, or a legacy direct-account-number link) - skip the
@@ -412,6 +418,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (input) input.value = '';
     accountSection.classList.remove('hidden');
     tableView.classList.add('hidden');
+  }
   }
 
   updateViewState();
@@ -581,9 +588,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       raw = sessionStorage.getItem(SCAN_RECOVERY_STORAGE_KEY);
     } catch {
-      return;
+      return false;
     }
-    if (!raw) return;
+    if (!raw) return false;
 
     sessionStorage.removeItem(SCAN_RECOVERY_STORAGE_KEY);
 
@@ -610,8 +617,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       output.textContent = 'Camera reset after idle timeout - your scanned items were preserved. Tap "Scan Next" to continue.';
       output.style.color = 'darkorange';
       updateViewState();
+      return true;
     } catch (e) {
       console.warn('Failed to restore scan recovery state:', e);
+      return false;
     }
   }
 
