@@ -59,6 +59,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   let inventoryProductItems = [];
   let ids = [];
 
+  // Keep scanner alive during idle periods to prevent camera suspension
+  let scannerHeartbeatInterval = null;
+
+  function startScannerHeartbeat() {
+    if (scannerHeartbeatInterval) return; // Already running
+    
+    scannerHeartbeatInterval = setInterval(() => {
+      if (barcodeScanner) {
+        try {
+          // No-op: just verify the scanner is still alive
+          // This keeps iOS/Safari from suspending camera access
+          if (typeof barcodeScanner.isReady === 'function' && barcodeScanner.isReady()) {
+            console.log('Scanner heartbeat: active');
+          }
+        } catch (e) {
+          console.warn('Scanner heartbeat check failed:', e);
+        }
+      }
+    }, 40000); // Every 40 seconds
+  }
+
+  function stopScannerHeartbeat() {
+    if (scannerHeartbeatInterval) {
+      clearInterval(scannerHeartbeatInterval);
+      scannerHeartbeatInterval = null;
+    }
+  }
 
   // Initialize Scanbot SDK
   async function initScanbot() {
@@ -391,11 +418,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       };
 
-      barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
-      console.log('Barcode scanner created:', barcodeScanner);
-
+      try {
+        barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
+        console.log('Barcode scanner created:', barcodeScanner);
+        startScannerHeartbeat(); // Keep camera alive during scanning
+      } catch (createErr) {
+        // Scanner creation failed (likely camera access revoked after inactivity)
+        // Try a full recovery: dispose everything and reinitialize
+        console.warn('Scanner creation failed, attempting recovery:', createErr);
+        barcodeScanner = null;
+        
+        try {
+          await initScanbot();
+          // Recreate video element again after SDK reinit
+          let videoElement2 = document.getElementById('video');
+          const newVideoElement2 = document.createElement('div');
+          newVideoElement2.id = 'video';
+          newVideoElement2.style.width = '400px';
+          newVideoElement2.style.height = '300px';
+          newVideoElement2.style.background = 'black';
+          if (videoElement2 && videoElement2.parentNode) {
+            videoElement2.parentNode.replaceChild(newVideoElement2, videoElement2);
+          }
+          
+          // Try creating scanner again
+          barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
+          console.log('Scanner recovered after reinit');
+        } catch (recoveryErr) {
+          console.error('Recovery failed:', recoveryErr);
+          stopScannerHeartbeat();
+          output.textContent = 'Failed to recover scanner. Please refresh the page.';
+          scanningView.classList.add('hidden');
+          tableView.classList.remove('hidden');
+          scanNextBtn.disabled = false;
+          return;
+        }
+      }
     } catch (err) {
       console.error('Error while starting scanner:', err);
+      stopScannerHeartbeat();
       output.textContent = 'Unable to start scanner. See console.';
       scanningView.classList.add('hidden');
       tableView.classList.remove('hidden');
@@ -456,6 +517,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addToTable(scannedCodes.length, entry);
 
     lastScannedCode = code;
+    stopScannerHeartbeat(); // Stop heartbeat when returning to table view
     scanningView.classList.add('hidden');
     tableView.classList.remove('hidden');
     scanNextBtn.disabled = false;
