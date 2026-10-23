@@ -1093,7 +1093,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const data = await res.json();
       const item = data.item;
-      if (!item || !row.isConnected) return;
+      if (!row.isConnected) return;
+
+      if (!item) {
+        // No Inventory_Product_Line__c record has this lot/serial at all —
+        // leave the row's PRDS as "Unknown" but let the user know the
+        // direct lookup was attempted and came up empty, rather than
+        // leaving the earlier "no inventory match found" message hanging.
+        output.textContent = `No product found for lot/serial ${row.dataset.reference}.`;
+        output.style.color = 'darkorange';
+        return;
+      }
 
       const sku = item.sku || '';
       row.dataset.prds = sku;
