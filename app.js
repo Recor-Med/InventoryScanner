@@ -939,7 +939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     entry.details = snapshotBarcode(barcode);
     scannedCodes.push(entry);
-    addToTable(scannedCodes.length, entry);
+    await addToTable(scannedCodes.length, entry);
 
     lastScannedCode = code;
     stopScannerHeartbeat(); // Stop heartbeat when returning to table view
@@ -952,8 +952,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Barcode detected:', { code, format });
   }
 
-  function addToTable(index, entry) {
-    addRawRowToTable(entry);
+  async function addToTable(index, entry) {
+    await addRawRowToTable(entry);
   }
 
   function snapshotBarcode(value, seen = new WeakSet()) {
@@ -1021,7 +1021,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replaceAll("'", '&#039;');
   }
 
-  function addRawRowToTable(entry) {
+  async function addRawRowToTable(entry) {
     const existingRow = Array.from(itemTableBody.querySelectorAll('tr'))
       .find(row => row.dataset.reference === entry.reference);
 
@@ -1044,12 +1044,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         )
       : null;
 
-    const sku = matchedItem?.sku || '';
-    const expiry = formatDate(matchedItem ? matchedItem.expiry : entry.extracted.expiry);
-    const quantity = matchedItem ? (Number(matchedItem.quantity) || 0) : 0;
-    // Prefer the Lot_Serial_Number__c value returned from the API (matchedItem.lotSerial)
+    let sku = matchedItem?.sku || '';
+    let directLookupItem = null;
+    let matchFound = Boolean(matchedItem);
+
+    if (!matchedItem && entry.reference) {
+      // No local match — wait for the direct Salesforce lot/serial lookup to
+      // resolve before rendering the row, so the PRDS value shown is final
+      // rather than a placeholder that gets patched in later.
+      output.textContent = `Scanned ${entry.referenceType} ${entry.reference}: checking inventory...`;
+      output.style.color = 'darkorange';
+      directLookupItem = await lookupProductByLotSerial(entry.reference);
+      if (directLookupItem) {
+        sku = directLookupItem.sku || '';
+        matchFound = true;
+      }
+    }
+
+    const resolvedItem = matchedItem || directLookupItem;
+    const expiry = formatDate(resolvedItem ? resolvedItem.expiry : entry.extracted.expiry);
+    const quantity = resolvedItem ? (Number(resolvedItem.quantity) || 0) : 0;
+    // Prefer the Lot_Serial_Number__c value returned from the API (resolvedItem.lotSerial)
     // for the visible column; fall back to the raw scanned reference if no match was found.
-    const lotSerialDisplay = matchedItem?.lotSerial || entry.reference;
+    const lotSerialDisplay = resolvedItem?.lotSerial || entry.reference;
 
     const row = document.createElement('tr');
     row.dataset.reference = entry.reference;
@@ -1065,22 +1082,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     `;
     itemTableBody.appendChild(row);
 
-    if (matchedItem) {
-      output.textContent = `Matched ${entry.referenceType} ${entry.reference}: ${sku}`;
+    if (matchFound) {
+      output.textContent = matchedItem
+        ? `Matched ${entry.referenceType} ${entry.reference}: ${sku}`
+        : `Matched ${entry.referenceType} ${entry.reference} via direct lookup: ${sku}`;
       output.style.color = 'green';
     } else {
-      output.textContent = `Scanned ${entry.referenceType} ${entry.reference} (no inventory match found)`;
+      output.textContent = entry.reference
+        ? `No product found for lot/serial ${entry.reference}.`
+        : `Scanned ${entry.referenceType} ${entry.reference} (no inventory match found)`;
       output.style.color = 'darkorange';
-      lookupProductByLotSerial(entry.reference, row);
     }
   }
 
   // Looks up Product_Part_Number__c (PRDS) directly from Salesforce by an
   // exact Lot_Serial_Number__c match when the scanned item wasn't already
-  // found in the account's pre-loaded inventoryProductItems list. Patches
-  // the already-rendered row in place once the result comes back.
-  async function lookupProductByLotSerial(lotSerial, row) {
-    if (!lotSerial || !row || !row.isConnected) return;
+  // found in the account's pre-loaded inventoryProductItems list. Returns
+  // the matching item (or null) so the caller can finish rendering the row
+  // with the final resolved value.
+  async function lookupProductByLotSerial(lotSerial) {
+    if (!lotSerial) return null;
 
     try {
       const res = await fetch(
@@ -1088,35 +1109,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       );
       if (!res.ok) {
         console.warn('Lot/Serial lookup failed:', res.status, res.statusText);
-        return;
+        return null;
       }
 
       const data = await res.json();
-      const item = data.item;
-      if (!row.isConnected) return;
-
-      if (!item) {
-        // No Inventory_Product_Line__c record has this lot/serial at all —
-        // leave the row's PRDS as "Unknown" but let the user know the
-        // direct lookup was attempted and came up empty, rather than
-        // leaving the earlier "no inventory match found" message hanging.
-        output.textContent = `No product found for lot/serial ${row.dataset.reference}.`;
-        output.style.color = 'darkorange';
-        return;
-      }
-
-      const sku = item.sku || '';
-      row.dataset.prds = sku;
-      const prdsCell = row.querySelector('[data-label="PRDS"]');
-      if (prdsCell) {
-        prdsCell.textContent = sku || 'Unknown';
-      }
-
-      output.textContent = `Matched ${row.dataset.reference} via direct lookup: ${sku}`;
-      output.style.color = 'green';
-      persistScanRecoveryState();
+      return data.item || null;
     } catch (err) {
       console.error('Error looking up item by lot/serial:', err);
+      return null;
     }
   }
 
