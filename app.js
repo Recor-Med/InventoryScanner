@@ -1059,7 +1059,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <td data-label="#">${itemTableBody.children.length + 1}</td>
       <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
       <td data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
-      <td data-label="Expiry Date">${escapeHtml(expiry || 'Unknown')}</td>
+      <td data-label="Expiry Date">${escapeHtml(expiry || 'N/A')}</td>
       <td data-label="Quantity">${quantity}</td>
       <td data-label="Count">1</td>
     `;
