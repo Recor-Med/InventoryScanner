@@ -553,26 +553,45 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Camera creation can fail transiently right after the OS/browser
       // suspends a backgrounded tab (the stream needs a moment to be
-      // reclaimed). Retry a couple of times with a short delay - this is
-      // fast (no WASM/engine reload) and resolves the vast majority of
-      // post-idle failures without ever touching the expensive full SDK
-      // reinitialization below.
+      // reclaimed). It can also "succeed" (resolve without throwing) while
+      // still producing a dead/frozen stream - the SDK call itself doesn't
+      // always surface that. So after each attempt we verify the resulting
+      // stream is actually healthy, and retry if it isn't. Retry a couple
+      // of times with a short delay - this is fast (no WASM/engine reload)
+      // and resolves the vast majority of post-idle failures without ever
+      // touching the expensive full SDK reinitialization below.
       const maxQuickRetries = 2;
       let lastErr = null;
       for (let attempt = 0; attempt <= maxQuickRetries; attempt++) {
         try {
           if (attempt > 0) {
             await new Promise(resolve => setTimeout(resolve, 500));
+            if (barcodeScanner) {
+              try {
+                await barcodeScanner.dispose();
+              } catch (e) {
+                console.warn('Error disposing stalled scanner before retry:', e);
+              }
+              barcodeScanner = null;
+            }
             recreateVideoContainer();
           }
           barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
+
+          // Give the stream a brief moment to actually start producing
+          // frames before judging it, then confirm it's really healthy.
+          await new Promise(resolve => setTimeout(resolve, 400));
+          const healthy = await isVideoStreamHealthy();
+          if (!healthy) {
+            throw new Error('Scanner created but camera stream is not producing frames');
+          }
+
           console.log(`Barcode scanner created${attempt > 0 ? ` (quick retry ${attempt})` : ''}`);
           lastErr = null;
           break;
         } catch (err) {
           lastErr = err;
           console.warn(`Scanner creation attempt ${attempt + 1} failed:`, err);
-          barcodeScanner = null;
         }
       }
 
@@ -589,6 +608,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           await initScanbot();
           recreateVideoContainer();
           barcodeScanner = await scanbotSDK.createBarcodeScanner(config);
+          await new Promise(resolve => setTimeout(resolve, 400));
+          if (!(await isVideoStreamHealthy())) {
+            throw new Error('Scanner recreated after full reinit but camera stream is not producing frames');
+          }
           console.log('Scanner recovered after full reinit');
           startScannerHeartbeat();
         } catch (recoveryErr) {
