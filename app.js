@@ -69,6 +69,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let formattedDate = today.toISOString().split('T')[0];
   let confirmedAccount = null;
   let confirmedAccountName = null;
+  // The Salesforce record Id (and whether it's an Account or Contact) that
+  // confirmedAccount was resolved from. This is what actually gets written
+  // to Inventory_Count__c.Account__c / Contact__c on submission - the
+  // Account Number/email in confirmedAccount is only used for inventory
+  // lookups and display.
+  let confirmedRecordType = null; // 'account' | 'contact' | null
+  let confirmedRecordId = null;
   let currentDeviceId = null;
   let lastScannedCode = null;
   let scanCooldown = false;
@@ -366,7 +373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error(data.error || `Unable to resolve account id ${effectiveAccountId}`);
       }
       setStoredConfirmedId('account', effectiveAccountId);
-      return { prefix: data.accountNumber };
+      return { prefix: data.accountNumber, type: 'account', id: data.id };
     }
     if (effectiveContactId) {
       const res = await fetch(`${API_BASE_URL}/api/contact?id=${encodeURIComponent(effectiveContactId)}`);
@@ -375,10 +382,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error(data.error || `Unable to resolve contact id ${effectiveContactId}`);
       }
       setStoredConfirmedId('contact', effectiveContactId);
-      return { prefix: data.email };
+      return { prefix: data.email, type: 'contact', id: data.id };
     }
     if (legacyAccountNumber) {
-      return { prefix: legacyAccountNumber };
+      // Legacy links only supply the Recor Account Number, not a Salesforce
+      // Id - look the Account up by number so we still have a real Id to
+      // use for Inventory_Count__c.Account__c on submission.
+      const res = await fetch(`${API_BASE_URL}/api/account?number=${encodeURIComponent(legacyAccountNumber)}`);
+      const data = await res.json();
+      if (!res.ok || !data.found || !data.accountNumber) {
+        throw new Error(data.error || `Unable to resolve account number ${legacyAccountNumber}`);
+      }
+      setStoredConfirmedId('account', data.id);
+      return { prefix: data.accountNumber, type: 'account', id: data.id };
     }
     return null;
   }
@@ -399,6 +415,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // load inventory straight away.
     confirmedAccount = null;
     confirmedAccountName = null;
+    confirmedRecordType = null;
+    confirmedRecordId = null;
 
     accountSection.classList.add('hidden');
     tableView.classList.remove('hidden');
@@ -408,6 +426,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const resolved = await resolveInventoryPrefix();
       confirmedAccount = resolved.prefix;
       confirmedAccountName = null;
+      confirmedRecordType = resolved.type;
+      confirmedRecordId = resolved.id;
       output.textContent = 'Loading inventory...';
       await fetchInventoryProducts(resolved.prefix);
       populateInventoryProductTable();
@@ -416,6 +436,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       console.error('Error fetching inventory product items:', err);
       clearStoredConfirmedId();
+      confirmedRecordType = null;
+      confirmedRecordId = null;
       const input = document.getElementById('accountInput');
       if (input) input.value = '';
       accountSection.classList.remove('hidden');
@@ -427,6 +449,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // bare scanner URL directly) - show the manual entry form so they can
     // type in either an account number or an email address.
     clearStoredConfirmedId();
+    confirmedRecordType = null;
+    confirmedRecordId = null;
     const input = document.getElementById('accountInput');
     if (input) input.value = '';
     accountSection.classList.remove('hidden');
@@ -481,6 +505,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const prefix = isEmail ? data.email : data.accountNumber;
       confirmedAccount = prefix;
       confirmedAccountName = null;
+      confirmedRecordType = isEmail ? 'contact' : 'account';
+      confirmedRecordId = data.id;
 
       output.textContent = 'Loading inventory product items...';
 
@@ -601,6 +627,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         scannedCodesCount: scannedCodes.length,
         confirmedAccount,
         confirmedAccountName,
+        confirmedRecordType,
+        confirmedRecordId,
         inventoryProductItems,
       };
       sessionStorage.setItem(SCAN_RECOVERY_STORAGE_KEY, JSON.stringify(state));
@@ -632,6 +660,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const state = JSON.parse(raw);
       confirmedAccount = state.confirmedAccount || null;
       confirmedAccountName = state.confirmedAccountName || null;
+      confirmedRecordType = state.confirmedRecordType || null;
+      confirmedRecordId = state.confirmedRecordId || null;
       inventoryProductItems = Array.isArray(state.inventoryProductItems) ? state.inventoryProductItems : [];
       if (state.tableHtml) {
         itemTableBody.innerHTML = state.tableHtml;
@@ -1207,6 +1237,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       output.textContent = 'Missing account';
       return;
     }
+    if (!confirmedRecordType || !confirmedRecordId) {
+      output.textContent = 'Missing Salesforce account/contact reference. Please reload and re-confirm the account.';
+      return;
+    }
 
     const rows = Array.from(itemTableBody.querySelectorAll('tr'));
     const codes = rows.map(row => ({
@@ -1225,6 +1259,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.pendingSubmission = {
       account: confirmedAccount,
       accountName: confirmedAccountName,
+      recordType: confirmedRecordType,
+      accountId: confirmedRecordType === 'account' ? confirmedRecordId : null,
+      contactId: confirmedRecordType === 'contact' ? confirmedRecordId : null,
       date: formattedDate,
       codes
     };
@@ -1263,8 +1300,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         scannedCodes.length = 0;
         confirmedAccount = null;
         confirmedAccountName = null;
+        confirmedRecordType = null;
+        confirmedRecordId = null;
         window.pendingSubmission = null;
         clearPersistedScanState();
+        clearStoredConfirmedId();
       } else {
         submissionMessage.textContent = 'Failed to submit table';
         console.error('Flow error:', data);
