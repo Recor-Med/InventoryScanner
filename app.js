@@ -39,6 +39,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const today = new Date()
 
+  // Formats a Date as YYYY-MM-DD using its *local* date components (not
+  // toISOString(), which converts to UTC and can land on the wrong day
+  // depending on the user's timezone/time of day - e.g. 11pm Pacific on the
+  // 24th is already the 25th in UTC). This is what gets sent to the server
+  // as the submission date, since the server's own clock/timezone has no
+  // bearing on what "today" means for the person actually using the scanner.
+  function formatLocalDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   // Base URL for the Recor Scanner API. The API is hosted on Azure and
   // firewalled to accept requests only from specific fixed IPs, so even when
   // the front end itself is served locally (e.g. `npm start` here using
@@ -66,7 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let reloadRecoveryTriggered = false;
   const SCAN_RECOVERY_STORAGE_KEY = 'inventoryScannerRecoveryState';
 
-  let formattedDate = today.toISOString().split('T')[0];
+  let formattedDate = formatLocalDate(today);
   let confirmedAccount = null;
   let confirmedAccountName = null;
   // The Salesforce record Id (and whether it's an Account or Contact) that
