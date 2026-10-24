@@ -311,52 +311,70 @@ document.addEventListener('DOMContentLoaded', async () => {
   const urlAccountId = (urlParams.get('accountId') || '').trim();
   const urlContactId = (urlParams.get('contactId') || '').trim();
   const legacyAccountNumber = (urlParams.get('account') || '').trim();
-  const CONFIRMED_PREFIX_STORAGE_KEY = 'inventoryScannerConfirmedPrefix';
+  // Stores the raw Salesforce Account/Contact record Id (not the resolved
+  // account number/email) so that a bare-URL reload within the same tab
+  // session can still skip straight to loading inventory without the
+  // account/contact Id being present in the URL again. The account number
+  // and contact email are never persisted here - they're only ever used
+  // transiently to verify/resolve which inventory lines to load.
+  const CONFIRMED_ID_STORAGE_KEY = 'inventoryScannerConfirmedId';
 
-  function getStoredConfirmedPrefix() {
+  function getStoredConfirmedId() {
     try {
-      return (sessionStorage.getItem(CONFIRMED_PREFIX_STORAGE_KEY) || '').trim();
+      const raw = sessionStorage.getItem(CONFIRMED_ID_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.type || !parsed.id) return null;
+      return parsed;
     } catch {
-      return '';
+      return null;
     }
   }
 
-  function setStoredConfirmedPrefix(prefix) {
+  function setStoredConfirmedId(type, id) {
     try {
-      if (prefix) {
-        sessionStorage.setItem(CONFIRMED_PREFIX_STORAGE_KEY, prefix);
+      if (type && id) {
+        sessionStorage.setItem(CONFIRMED_ID_STORAGE_KEY, JSON.stringify({ type, id }));
       }
     } catch {
       // Ignore storage errors (e.g. disabled storage/private mode restrictions)
     }
   }
 
-  function clearStoredConfirmedPrefix() {
+  function clearStoredConfirmedId() {
     try {
-      sessionStorage.removeItem(CONFIRMED_PREFIX_STORAGE_KEY);
+      sessionStorage.removeItem(CONFIRMED_ID_STORAGE_KEY);
     } catch {
       // Ignore storage errors
     }
   }
 
-  // Resolves whichever identifier was supplied in the URL into the prefix
-  // value (account number or contact email) used to filter inventory
-  // product lines.
+  const storedConfirmedId = getStoredConfirmedId();
+  // Prefer an Id freshly supplied in the URL; fall back to a previously
+  // stored one of the same type so a plain reload of the bare scanner URL
+  // (no query string) within the same session still skips manual entry.
+  const effectiveAccountId = urlAccountId || (storedConfirmedId?.type === 'account' ? storedConfirmedId.id : '');
+  const effectiveContactId = !effectiveAccountId
+    ? (urlContactId || (storedConfirmedId?.type === 'contact' ? storedConfirmedId.id : ''))
+    : '';
+
   async function resolveInventoryPrefix() {
-    if (urlAccountId) {
-      const res = await fetch(`${API_BASE_URL}/api/account?id=${encodeURIComponent(urlAccountId)}`);
+    if (effectiveAccountId) {
+      const res = await fetch(`${API_BASE_URL}/api/account?id=${encodeURIComponent(effectiveAccountId)}`);
       const data = await res.json();
       if (!res.ok || !data.found || !data.accountNumber) {
-        throw new Error(data.error || `Unable to resolve account id ${urlAccountId}`);
+        throw new Error(data.error || `Unable to resolve account id ${effectiveAccountId}`);
       }
+      setStoredConfirmedId('account', effectiveAccountId);
       return { prefix: data.accountNumber };
     }
-    if (urlContactId) {
-      const res = await fetch(`${API_BASE_URL}/api/contact?id=${encodeURIComponent(urlContactId)}`);
+    if (effectiveContactId) {
+      const res = await fetch(`${API_BASE_URL}/api/contact?id=${encodeURIComponent(effectiveContactId)}`);
       const data = await res.json();
       if (!res.ok || !data.found || !data.email) {
-        throw new Error(data.error || `Unable to resolve contact id ${urlContactId}`);
+        throw new Error(data.error || `Unable to resolve contact id ${effectiveContactId}`);
       }
+      setStoredConfirmedId('contact', effectiveContactId);
       return { prefix: data.email };
     }
     if (legacyAccountNumber) {
@@ -365,12 +383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return null;
   }
 
-  const storedConfirmedPrefix =
-    !urlAccountId && !urlContactId && !legacyAccountNumber
-      ? ''
-      : '';
-
-  console.log('Init check:', { urlAccountId, urlContactId, legacyAccountNumber, storedConfirmedPrefix, scanStateWasRestored });
+  console.log('Init check:', { urlAccountId, urlContactId, effectiveAccountId, effectiveContactId, legacyAccountNumber, scanStateWasRestored });
 
   // Skip the normal URL-param/manual-entry account resolution entirely if
   // we just restored scanned progress after a recovery reload - otherwise
@@ -378,10 +391,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // account/table views back, discarding everything
   // restoreScanRecoveryStateIfPresent() just set up.
   if (!scanStateWasRestored) {
-  if (urlAccountId || urlContactId || legacyAccountNumber) {
+  if (effectiveAccountId || effectiveContactId || legacyAccountNumber) {
     // An identifier was supplied via the URL (from the Account page, the
-    // Contact page, or a legacy direct-account-number link) - skip the
-    // manual entry form entirely and resolve + load inventory straight away.
+    // Contact page, or a legacy direct-account-number link), or a
+    // previously-confirmed Id was found in sessionStorage from earlier in
+    // this tab session - skip the manual entry form entirely and resolve +
+    // load inventory straight away.
     confirmedAccount = null;
     confirmedAccountName = null;
 
@@ -390,12 +405,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     output.textContent = 'Loading inventory...';
 
     try {
-      const resolved = storedConfirmedPrefix
-        ? { prefix: storedConfirmedPrefix }
-        : await resolveInventoryPrefix();
+      const resolved = await resolveInventoryPrefix();
       confirmedAccount = resolved.prefix;
       confirmedAccountName = null;
-      setStoredConfirmedPrefix(resolved.prefix);
       output.textContent = 'Loading inventory...';
       await fetchInventoryProducts(resolved.prefix);
       populateInventoryProductTable();
@@ -403,7 +415,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       persistScanRecoveryState();
     } catch (err) {
       console.error('Error fetching inventory product items:', err);
-      clearStoredConfirmedPrefix();
+      clearStoredConfirmedId();
       const input = document.getElementById('accountInput');
       if (input) input.value = '';
       accountSection.classList.remove('hidden');
@@ -414,7 +426,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // No identifier was supplied at all (e.g. the user navigated to the
     // bare scanner URL directly) - show the manual entry form so they can
     // type in either an account number or an email address.
-    clearStoredConfirmedPrefix();
+    clearStoredConfirmedId();
     const input = document.getElementById('accountInput');
     if (input) input.value = '';
     accountSection.classList.remove('hidden');
@@ -469,7 +481,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const prefix = isEmail ? data.email : data.accountNumber;
       confirmedAccount = prefix;
       confirmedAccountName = null;
-      setStoredConfirmedPrefix(prefix);
 
       output.textContent = 'Loading inventory product items...';
 
