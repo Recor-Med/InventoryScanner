@@ -284,10 +284,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       scanbotSDK = await ScanbotSDK.initialize({
         licenseKey: licenseKey,
         enginePath: '/wasm/',
-        onInitialize: () => console.log('Scanbot SDK initialized!'),
         onInitializeError: (error) => console.error('Init failed:', error)
       });
-      console.log('Scanbot SDK ready:', scanbotSDK.isReady);
     } catch (err) {
       console.error('Failed to initialize Scanbot SDK:', err);
       output.textContent = 'Failed to initialize scanner.';
@@ -395,8 +393,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     return null;
   }
-
-  console.log('Init check:', { urlAccountId, urlContactId, effectiveAccountId, effectiveContactId, legacyAccountNumber, scanStateWasRestored });
 
   // Skip the normal URL-param/manual-entry account resolution entirely if
   // we just restored scanned progress after a recovery reload - otherwise
@@ -538,7 +534,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!res.ok) throw new Error(`Unable to fetch items: ${res.status}`);
     const data = await res.json();
     inventoryProductItems = data.items || [];
-    console.log('Fetched /api/items:', inventoryProductItems);
   }
 
   // Lists the full set of Inventory_Product_line__c records returned for the
@@ -572,7 +567,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       const data = await res.json();
       ids = data.ids || [];
-      console.log('Fetched /api/ids:', ids);
     } catch (err) {
       console.error('Error fetching /api/ids:', err);
       ids = [];
@@ -986,8 +980,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     scanNextBtn.disabled = false;
     updateViewState();
     persistScanRecoveryState();
-
-    console.log('Barcode detected:', { code, format });
   }
 
   async function addToTable(index, entry) {
