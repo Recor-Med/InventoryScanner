@@ -37,21 +37,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const licenseKey = window.LOCAL_SDK_LICENSE_KEY ||
     "eyJpZCI6IkI4QTAwODI4LTI0MTYtNDk3QS1BN0ZELTdDMkMwRkY0M0Y4QyIsInR5cGUiOiJPRkZMSU5FIiwiYXBwSWRzIjpbImxvY2FsaG9zdCIsInNjYW5uZXIucmVjb3JtZWRpY2FsLmNvbSJdLCJleHBpcmF0aW9uVGltZXN0YW1wIjoxODIyMTc2MDAwMDAwLCJmZWF0dXJlcyI6WyJCYXJjb2RlU2Nhbm5lciJdLCJwbGF0Zm9ybXMiOlsiV2ViQXNzZW1ibHkiXSwidmFsaWRGcm9tVGltZXN0YW1wIjoxNzkwNzI2NDAwMDAwLCJncmFjZVBlcmlvZE1zIjo1MTg0MDAwMDAwLCJtZXRhZGF0YSI6eyJsaWNlbnNlZSI6IlJlY29yIE1lZGljYWwgSW5jIiwibGljZW5zZUlkIjoiYTVqT0swMDAwMDFtbU9MWUFZIiwib3BlcmF0b3IiOiJATGF1cmVsIn19.MEYCIQDaaciootHlOv4IQ1tXsb-V11BhYTjChBrntHer2xoXhgIhANpZGsBuIaBbe6XPVuGzulb2_9Sxt9FKRpt9fGIQRcom";
 
-  const today = new Date()
-
-  // Formats a Date as YYYY-MM-DD using its *local* date components (not
-  // toISOString(), which converts to UTC and can land on the wrong day
-  // depending on the user's timezone/time of day - e.g. 11pm Pacific on the
-  // 24th is already the 25th in UTC). This is what gets sent to the server
-  // as the submission date, since the server's own clock/timezone has no
-  // bearing on what "today" means for the person actually using the scanner.
-  function formatLocalDate(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
   // Base URL for the Recor Scanner API. The API is hosted on Azure and
   // firewalled to accept requests only from specific fixed IPs, so even when
   // the front end itself is served locally (e.g. `npm start` here using
@@ -79,7 +64,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   let reloadRecoveryTriggered = false;
   const SCAN_RECOVERY_STORAGE_KEY = 'inventoryScannerRecoveryState';
 
-  let formattedDate = formatLocalDate(today);
   let confirmedAccount = null;
   let confirmedAccountName = null;
   // The Salesforce record Id (and whether it's an Account or Contact) that
@@ -1275,7 +1259,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       recordType: confirmedRecordType,
       accountId: confirmedRecordType === 'account' ? confirmedRecordId : null,
       contactId: confirmedRecordType === 'contact' ? confirmedRecordId : null,
-      date: formattedDate,
       codes
     };
 
