@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startBtn = document.getElementById('startBtn');
   const cancelScanBtn = document.getElementById('cancelScanBtn');
   const scanNextBtn = document.getElementById('scanNextBtn');
+  const removeLastBtn = document.getElementById('removeLastBtn');
   const submitBtn = document.getElementById('submitBtn');
   const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
   const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
@@ -579,8 +580,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     startBtn.disabled = !confirmedAccount;
     scanNextBtn.classList.toggle('invisible', !hasScans);
     scanNextBtn.disabled = !hasScans;
+    removeLastBtn.disabled = !hasScans;
     submitBtn.disabled = !hasScans;
     buttonSection.classList.toggle('hidden', !hasScans);
+  }
+
+  // Undoes the most recently scanned item, in case the user accidentally
+  // scanned the same item twice (or scanned the wrong item). If the last
+  // scan only incremented an existing row's count, the count is simply
+  // decremented. Otherwise the row it created is removed outright. The
+  // `#` column is renumbered afterward to stay sequential.
+  function removeLastScan() {
+    if (scannedCodes.length === 0) return;
+
+    const removed = scannedCodes.pop();
+    const rows = Array.from(itemTableBody.querySelectorAll('tr'));
+    if (rows.length === 0) {
+      updateViewState();
+      persistScanRecoveryState();
+      return;
+    }
+
+    // Normally `removed` is the full entry object pushed in
+    // onBarcodeDetected(), which lets us find its exact row via the
+    // reference it was scanned with. After a sessionStorage restore,
+    // though, scannedCodes only contains `true` placeholders (see
+    // restoreScanRecoveryStateIfPresent()) - in that case fall back to
+    // just targeting the last row in the table.
+    const targetRow = (removed && typeof removed === 'object' && removed.reference)
+      ? rows.find(row => row.dataset.reference === removed.reference) || rows[rows.length - 1]
+      : rows[rows.length - 1];
+
+    const countCell = targetRow.cells[5];
+    const currentCount = Number(countCell.textContent) || 0;
+    const reference = targetRow.dataset.reference || '';
+
+    if (currentCount > 1) {
+      countCell.textContent = currentCount - 1;
+      output.textContent = reference
+        ? `Removed last scan: decremented count for ${reference}.`
+        : 'Removed last scan.';
+    } else {
+      targetRow.remove();
+      output.textContent = reference
+        ? `Removed last scan: ${reference}.`
+        : 'Removed last scan.';
+      // Renumber the `#` column so it stays sequential after the removal.
+      Array.from(itemTableBody.querySelectorAll('tr')).forEach((row, i) => {
+        const indexCell = row.cells[0];
+        if (indexCell) indexCell.textContent = i + 1;
+      });
+    }
+    output.style.color = 'darkorange';
+
+    updateViewState();
+    persistScanRecoveryState();
   }
 
   // The Scanbot SDK has no supported way to tear down/terminate a worker
@@ -1220,6 +1274,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   scanNextBtn.addEventListener('click', () => startScan());
+
+  removeLastBtn.addEventListener('click', () => removeLastScan());
 
   submitBtn.addEventListener('click', () => {
     if (!confirmedAccount) {
