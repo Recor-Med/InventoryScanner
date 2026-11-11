@@ -537,27 +537,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     inventoryProductItems = data.items || [];
   }
 
-  // Lists the full set of Inventory_Product_line__c records returned for the
-  // account (from the URL) so the user can see expected inventory up front.
-  // Each row's Count starts at 0 and is incremented as matching lot/serial
-  // numbers are scanned (see addRawRowToTable's inventoryProductItems lookup).
+  // Stock takes are done "blind": the user must not see the expected
+  // inventory list or quantities up front. inventoryProductItems is still
+  // fetched and kept in memory (so scanned lot/serial numbers can be
+  // matched against it in addRawRowToTable), but no rows are rendered
+  // until a matching barcode is actually scanned.
   function populateInventoryProductTable() {
     itemTableBody.innerHTML = '';
-    inventoryProductItems.forEach((item, index) => {
-      const row = document.createElement('tr');
-      row.dataset.reference = item.lotSerial || '';
-      row.dataset.gtin = '';
-      row.dataset.prds = item.sku || '';
-      row.innerHTML = `
-        <td data-label="#">${index + 1}</td>
-        <td data-label="PRDS">${escapeHtml(item.sku || '')}</td>
-        <td data-label="Lot/Serial">${escapeHtml(item.lotSerial || '')}</td>
-        <td data-label="Expiry Date">${formatDate(item.expiry)}</td>
-        <td data-label="Quantity">${item.quantity || 0}</td>
-        <td data-label="Count">0</td>
-      `;
-      itemTableBody.appendChild(row);
-    });
   }
 
   async function fetchIds() {
@@ -611,7 +597,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ? rows.find(row => row.dataset.reference === removed.reference) || rows[rows.length - 1]
       : rows[rows.length - 1];
 
-    const countCell = targetRow.cells[5];
+    const countCell = targetRow.cells[4];
     const currentCount = Number(countCell.textContent) || 0;
     const reference = targetRow.dataset.reference || '';
 
@@ -1110,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .find(row => row.dataset.reference === entry.reference);
 
     if (existingRow) {
-      const countCell = existingRow.cells[5];
+      const countCell = existingRow.cells[4];
       countCell.textContent = Number(countCell.textContent) + 1;
       output.textContent = `Incremented count for ${entry.referenceType} ${entry.reference}`;
       output.style.color = 'green';
@@ -1147,7 +1133,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const resolvedItem = matchedItem || directLookupItem;
     const expiry = formatDate(resolvedItem ? resolvedItem.expiry : entry.extracted.expiry);
-    const quantity = resolvedItem ? (Number(resolvedItem.quantity) || 0) : 0;
+    // Note: quantity is intentionally not displayed - stock takes are done
+    // blind, so the expected quantity must never be shown to the scanner.
     // Prefer the Lot_Serial_Number__c value returned from the API (resolvedItem.lotSerial)
     // for the visible column; fall back to the raw scanned reference if no match was found.
     const lotSerialDisplay = resolvedItem?.lotSerial || entry.reference;
@@ -1156,12 +1143,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     row.dataset.reference = entry.reference;
     row.dataset.gtin = entry.extracted.product;
     row.dataset.prds = sku;
+    // Quantity is kept as hidden row data (not rendered) so it can still be
+    // submitted to Salesforce without ever being shown to the scanner.
+    row.dataset.quantity = String(resolvedItem ? (Number(resolvedItem.quantity) || 0) : 0);
     row.innerHTML = `
       <td data-label="#">${itemTableBody.children.length + 1}</td>
       <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
       <td data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
       <td data-label="Expiry Date">${escapeHtml(expiry || 'N/A')}</td>
-      <td data-label="Quantity">${quantity}</td>
       <td data-label="Count">1</td>
     `;
     itemTableBody.appendChild(row);
@@ -1292,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       sku: row.dataset.prds || '',
       lotSerial: row.querySelector('[data-label="Lot/Serial"]').textContent.trim(),
       expiry: row.querySelector('[data-label="Expiry Date"]').textContent.trim(),
-      quantity: row.querySelector('[data-label="Quantity"]').textContent.trim(),
+      quantity: row.dataset.quantity || '0',
       count: parseInt(row.querySelector('[data-label="Count"]').textContent.trim(), 10) || 0
     }));
 
