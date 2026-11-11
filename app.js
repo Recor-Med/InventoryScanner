@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const manualEntryError = document.getElementById('manualEntryError');
   const manualEntryConfirmBtn = document.getElementById('manualEntryConfirmBtn');
   const manualEntryCancelBtn = document.getElementById('manualEntryCancelBtn');
+  const expiredAlertModal = document.getElementById('expiredAlertModal');
+  const expiredAlertMessage = document.getElementById('expiredAlertMessage');
+  const expiredAlertOkBtn = document.getElementById('expiredAlertOkBtn');
   const itemTableBody = document.querySelector('#itemTable tbody');
 
   // The Scanbot SDK license key
@@ -1214,6 +1217,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       output.style.color = 'green';
       setLastScannedRow(existingRow);
       showLastActionMessage(1, existingRow.cells[0].textContent.trim());
+      if (isExpiryDatePast(existingRow.cells[3].textContent.trim())) {
+        showExpiredAlert(existingRow.dataset.reference);
+      }
       return;
     }
 
@@ -1247,6 +1253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const resolvedItem = matchedItem || directLookupItem;
     const expiry = formatDate(resolvedItem ? resolvedItem.expiry : entry.extracted.expiry);
+    const expired = isExpiryDatePast(expiry);
     // Note: quantity is intentionally not displayed - stock takes are done
     // blind, so the expected quantity must never be shown to the scanner.
     // Prefer the Lot_Serial_Number__c value returned from the API (resolvedItem.lotSerial)
@@ -1265,7 +1272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <td data-label="#">${rowNumber}</td>
       <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
       <td data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
-      <td data-label="Expiry Date">${escapeHtml(expiry || 'N/A')}</td>
+      <td data-label="Expiry Date"${expired ? ' class="text-red-600 font-semibold"' : ''}>${escapeHtml(expiry || 'N/A')}</td>
       <td data-label="Count">1</td>
     `;
     const addRow = document.getElementById(MANUAL_ADD_ROW_ID);
@@ -1277,6 +1284,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureAddRow();
     setLastScannedRow(row);
     showLastActionMessage(1, rowNumber);
+    if (expired) {
+      showExpiredAlert(lotSerialDisplay);
+    }
 
     if (matchFound) {
       output.textContent = matchedItem
@@ -1354,6 +1364,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     const year = date.getFullYear();
     return `${month}/${day}/${year}`;
   }
+
+  // Takes a date already run through formatDate() (MM/DD/YYYY) and reports
+  // whether it falls strictly before today (local time, time-of-day
+  // ignored), i.e. the product has expired.
+  function isExpiryDatePast(formattedDate) {
+    if (!formattedDate) return false;
+    const match = String(formattedDate).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return false;
+    const [, month, day, year] = match;
+    const expiryDate = new Date(Number(year), Number(month) - 1, Number(day));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return expiryDate.getTime() < today.getTime();
+  }
+
+  function showExpiredAlert(lotSerialDisplay) {
+    expiredAlertMessage.textContent = lotSerialDisplay
+      ? `Lot/Serial ${lotSerialDisplay} has an expiry date in the past.`
+      : 'This product has an expiry date in the past.';
+    expiredAlertModal.classList.remove('hidden');
+  }
+
+  function closeExpiredAlert() {
+    expiredAlertModal.classList.add('hidden');
+  }
+
+  expiredAlertOkBtn.addEventListener('click', () => closeExpiredAlert());
 
   verifyAccountBtn.addEventListener('click', verifyAccountNumber);
 

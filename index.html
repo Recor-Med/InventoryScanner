@@ -86,6 +86,15 @@
     <p id="submissionMessage" class="text-lg font-semibold text-green-600"></p>
   </div>
 
+  <!-- Expired Product Alert Modal -->
+  <div id="expiredAlertModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow p-6 w-full max-w-sm text-center">
+      <p class="text-lg font-semibold text-red-600 mb-4">⚠ Product Expired</p>
+      <p id="expiredAlertMessage" class="text-sm text-gray-700 mb-4"></p>
+      <button id="expiredAlertOkBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded w-full">OK</button>
+    </div>
+  </div>
+
   <!-- Manual Lot/Serial Entry Modal (opened via the "+" row at the bottom
        of the table, for when a barcode can't be read) -->
   <div id="manualEntryModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
