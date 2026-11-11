@@ -1252,7 +1252,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const resolvedItem = matchedItem || directLookupItem;
-    const expiry = formatDate(resolvedItem ? resolvedItem.expiry : entry.extracted.expiry);
+    // Prefer the expiry date actually printed in the scanned barcode when
+    // one was present (many products encode it directly), falling back to
+    // the Salesforce-resolved value only when the barcode itself didn't
+    // carry an expiry date.
+    const expiry = formatDate(entry.extracted.expiry || (resolvedItem ? resolvedItem.expiry : ''));
     const expired = isExpiryDatePast(expiry);
     // Note: quantity is intentionally not displayed - stock takes are done
     // blind, so the expected quantity must never be shown to the scanner.
