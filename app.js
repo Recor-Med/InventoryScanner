@@ -33,6 +33,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const submitBtn = document.getElementById('submitBtn');
   const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
   const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
+  const manualEntryModal = document.getElementById('manualEntryModal');
+  const manualEntryInput = document.getElementById('manualEntryInput');
+  const manualEntryError = document.getElementById('manualEntryError');
+  const manualEntryConfirmBtn = document.getElementById('manualEntryConfirmBtn');
+  const manualEntryCancelBtn = document.getElementById('manualEntryCancelBtn');
   const itemTableBody = document.querySelector('#itemTable tbody');
 
   // The Scanbot SDK license key
@@ -545,6 +550,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // until a matching barcode is actually scanned.
   function populateInventoryProductTable() {
     itemTableBody.innerHTML = '';
+    ensureAddRow();
   }
 
   async function fetchIds() {
@@ -581,7 +587,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (scannedCodes.length === 0) return;
 
     const removed = scannedCodes.pop();
-    const rows = Array.from(itemTableBody.querySelectorAll('tr'));
+    const rows = Array.from(itemTableBody.querySelectorAll('tr[data-reference]'));
     if (rows.length === 0) {
       updateViewState();
       persistScanRecoveryState();
@@ -616,7 +622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? `Removed last scan: ${reference}.`
         : 'Removed last scan.';
       // Renumber the `#` column so it stays sequential after the removal.
-      const remainingRows = Array.from(itemTableBody.querySelectorAll('tr'));
+      const remainingRows = Array.from(itemTableBody.querySelectorAll('tr[data-reference]'));
       remainingRows.forEach((row, i) => {
         const indexCell = row.cells[0];
         if (indexCell) indexCell.textContent = i + 1;
@@ -703,6 +709,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       inventoryProductItems = Array.isArray(state.inventoryProductItems) ? state.inventoryProductItems : [];
       if (state.tableHtml) {
         itemTableBody.innerHTML = state.tableHtml;
+        ensureAddRow();
         // scannedCodes only needs to reflect "how many items were actually
         // scanned" for updateViewState()'s hasScans check; the actual row
         // data already lives in the restored DOM. Use the persisted real
@@ -1105,7 +1112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // view. Pass null to just clear the highlight (e.g. when the table is
   // emptied out).
   function setLastScannedRow(row) {
-    itemTableBody.querySelectorAll('tr').forEach(r => r.classList.remove(...LAST_SCANNED_ROW_CLASSES));
+    itemTableBody.querySelectorAll('tr[data-reference]').forEach(r => r.classList.remove(...LAST_SCANNED_ROW_CLASSES));
     if (row) {
       row.classList.add(...LAST_SCANNED_ROW_CLASSES);
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1132,8 +1139,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     lastActionOutput.classList.add(...(isAdd ? ['bg-green-100', 'text-green-800'] : ['bg-red-100', 'text-red-800']));
   }
 
+  const MANUAL_ADD_ROW_ID = 'manualAddRow';
+
+  // Keeps a permanent "+" row pinned to the bottom of the table so the user
+  // can always add an item by hand when a barcode can't be read. Safe to
+  // call after any operation that touches the table body: it removes any
+  // existing add-row first (if present) so it never ends up duplicated or
+  // stuck in the middle of the list.
+  function ensureAddRow() {
+    const existing = document.getElementById(MANUAL_ADD_ROW_ID);
+    if (existing) existing.remove();
+
+    const addRow = document.createElement('tr');
+    addRow.id = MANUAL_ADD_ROW_ID;
+    addRow.classList.add('cursor-pointer', 'hover:bg-gray-50');
+    addRow.innerHTML = `
+      <td class="border px-2 py-1 text-green-600 font-bold text-lg" data-label="#">+</td>
+      <td class="border px-2 py-1" colspan="4"></td>
+    `;
+    addRow.addEventListener('click', openManualEntryModal);
+    itemTableBody.appendChild(addRow);
+  }
+
+  function openManualEntryModal() {
+    manualEntryError.classList.add('hidden');
+    manualEntryError.textContent = '';
+    manualEntryInput.value = '';
+    manualEntryModal.classList.remove('hidden');
+    manualEntryInput.focus();
+  }
+
+  function closeManualEntryModal() {
+    manualEntryModal.classList.add('hidden');
+  }
+
+  async function confirmManualEntry() {
+    const lotSerial = manualEntryInput.value.trim();
+    if (!lotSerial) {
+      manualEntryError.textContent = 'Please enter a lot/serial number.';
+      manualEntryError.classList.remove('hidden');
+      return;
+    }
+
+    const entry = {
+      code: lotSerial,
+      format: 'MANUAL',
+      count: 1,
+      reference: lotSerial,
+      referenceType: 'BATCH/LOT',
+      extracted: { lot: lotSerial, serial: '', expiry: '', product: '' },
+      details: null,
+    };
+    scannedCodes.push(entry);
+    closeManualEntryModal();
+    await addToTable(scannedCodes.length, entry);
+    updateViewState();
+    persistScanRecoveryState();
+  }
+
+  manualEntryConfirmBtn.addEventListener('click', () => confirmManualEntry());
+  manualEntryCancelBtn.addEventListener('click', () => closeManualEntryModal());
+  manualEntryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmManualEntry();
+  });
+
   async function addRawRowToTable(entry) {
-    const existingRow = Array.from(itemTableBody.querySelectorAll('tr'))
+    const existingRow = Array.from(itemTableBody.querySelectorAll('tr[data-reference]'))
       .find(row => row.dataset.reference === entry.reference);
 
     if (existingRow) {
@@ -1189,16 +1260,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Quantity is kept as hidden row data (not rendered) so it can still be
     // submitted to Salesforce without ever being shown to the scanner.
     row.dataset.quantity = String(resolvedItem ? (Number(resolvedItem.quantity) || 0) : 0);
+    const rowNumber = itemTableBody.querySelectorAll('tr[data-reference]').length + 1;
     row.innerHTML = `
-      <td data-label="#">${itemTableBody.children.length + 1}</td>
+      <td data-label="#">${rowNumber}</td>
       <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
       <td data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
       <td data-label="Expiry Date">${escapeHtml(expiry || 'N/A')}</td>
       <td data-label="Count">1</td>
     `;
-    itemTableBody.appendChild(row);
+    const addRow = document.getElementById(MANUAL_ADD_ROW_ID);
+    if (addRow) {
+      itemTableBody.insertBefore(row, addRow);
+    } else {
+      itemTableBody.appendChild(row);
+    }
+    ensureAddRow();
     setLastScannedRow(row);
-    showLastActionMessage(1, row.cells[0].textContent.trim());
+    showLastActionMessage(1, rowNumber);
 
     if (matchFound) {
       output.textContent = matchedItem
@@ -1321,7 +1399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const rows = Array.from(itemTableBody.querySelectorAll('tr'));
+    const rows = Array.from(itemTableBody.querySelectorAll('tr[data-reference]'));
     const codes = rows.map(row => ({
       sku: row.dataset.prds || '',
       lotSerial: row.querySelector('[data-label="Lot/Serial"]').textContent.trim(),

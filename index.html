@@ -86,6 +86,21 @@
     <p id="submissionMessage" class="text-lg font-semibold text-green-600"></p>
   </div>
 
+  <!-- Manual Lot/Serial Entry Modal (opened via the "+" row at the bottom
+       of the table, for when a barcode can't be read) -->
+  <div id="manualEntryModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow p-6 w-full max-w-sm">
+      <p class="text-lg font-semibold mb-4">Add Item Manually</p>
+      <label for="manualEntryInput" class="block text-sm font-medium mb-2">Lot/Serial Number:</label>
+      <input type="text" id="manualEntryInput" placeholder="e.g. ABC123" class="w-full p-2 border border-gray-300 rounded mb-3" />
+      <div id="manualEntryError" class="hidden text-red-600 text-sm mb-3"></div>
+      <div class="flex justify-center gap-x-2">
+        <button id="manualEntryConfirmBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex-1">Add</button>
+        <button id="manualEntryCancelBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex-1">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Scanbot Library -->
   <script src="/wasm/ScanbotSDK.min.js"></script>
   <script src="app.js?v=20260923-3"></script>
