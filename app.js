@@ -1157,8 +1157,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     addRow.id = MANUAL_ADD_ROW_ID;
     addRow.classList.add('cursor-pointer', 'hover:bg-gray-50');
     addRow.innerHTML = `
-      <td class="border px-2 py-1 text-green-600 font-bold text-lg" data-label="#">+</td>
-      <td class="border px-2 py-1" colspan="4"></td>
+      <td class="border border-gray-300 px-2 py-1 text-green-600 font-bold text-lg" data-label="#">+</td>
+      <td class="border border-gray-300 px-2 py-1" colspan="4"></td>
     `;
     addRow.addEventListener('click', openManualEntryModal);
     itemTableBody.appendChild(addRow);
@@ -1273,11 +1273,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     row.dataset.quantity = String(resolvedItem ? (Number(resolvedItem.quantity) || 0) : 0);
     const rowNumber = itemTableBody.querySelectorAll('tr[data-reference]').length + 1;
     row.innerHTML = `
-      <td data-label="#">${rowNumber}</td>
-      <td data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
-      <td data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
-      <td data-label="Expiry Date"${expired ? ' class="text-red-600 font-semibold"' : ''}>${escapeHtml(expiry || 'N/A')}</td>
-      <td data-label="Count">1</td>
+      <td class="border border-gray-300 px-2 py-1" data-label="#">${rowNumber}</td>
+      <td class="border border-gray-300 px-2 py-1" data-label="PRDS">${escapeHtml(sku || 'Unknown')}</td>
+      <td class="border border-gray-300 px-2 py-1" data-label="Lot/Serial">${escapeHtml(lotSerialDisplay)}</td>
+      <td class="border border-gray-300 px-2 py-1${expired ? ' text-red-600 font-semibold' : ''}" data-label="Expiry Date">${escapeHtml(expiry || 'N/A')}</td>
+      <td class="border border-gray-300 px-2 py-1" data-label="Count">1</td>
     `;
     const addRow = document.getElementById(MANUAL_ADD_ROW_ID);
     if (addRow) {
