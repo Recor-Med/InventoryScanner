@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const videoElement = document.getElementById('video');
   const output = document.getElementById('output');
+  const lastActionOutput = document.getElementById('lastActionOutput');
   const scanningView = document.getElementById('scanningView');
   const tableView = document.getElementById('tableView');
   const confirmationView = document.getElementById('confirmationView');
@@ -600,6 +601,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const countCell = targetRow.cells[4];
     const currentCount = Number(countCell.textContent) || 0;
     const reference = targetRow.dataset.reference || '';
+    const targetRowNumber = targetRow.cells[0].textContent.trim();
 
     if (currentCount > 1) {
       countCell.textContent = currentCount - 1;
@@ -607,6 +609,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? `Removed last scan: decremented count for ${reference}.`
         : 'Removed last scan.';
       setLastScannedRow(targetRow);
+      showLastActionMessage(-1, targetRowNumber);
     } else {
       targetRow.remove();
       output.textContent = reference
@@ -619,6 +622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (indexCell) indexCell.textContent = i + 1;
       });
       setLastScannedRow(remainingRows[remainingRows.length - 1] || null);
+      showLastActionMessage(-1, targetRowNumber);
     }
     output.style.color = 'darkorange';
 
@@ -1108,6 +1112,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // Shows a short-lived, prominent message above the table reporting the
+  // row number that was just affected, e.g. "+1 added to row #3" or
+  // "-1 removed from row #3", so it's obvious what just happened during a
+  // blind stock take without needing to scan the whole table for the
+  // highlighted row.
+  function showLastActionMessage(delta, rowNumber) {
+    if (!lastActionOutput) return;
+    if (rowNumber == null) {
+      lastActionOutput.classList.add('hidden');
+      lastActionOutput.textContent = '';
+      return;
+    }
+    const isAdd = delta > 0;
+    lastActionOutput.textContent = isAdd
+      ? `+1 added to row #${rowNumber}`
+      : `-1 removed from row #${rowNumber}`;
+    lastActionOutput.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
+    lastActionOutput.classList.add(...(isAdd ? ['bg-green-100', 'text-green-800'] : ['bg-red-100', 'text-red-800']));
+  }
+
   async function addRawRowToTable(entry) {
     const existingRow = Array.from(itemTableBody.querySelectorAll('tr'))
       .find(row => row.dataset.reference === entry.reference);
@@ -1118,6 +1142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       output.textContent = `Incremented count for ${entry.referenceType} ${entry.reference}`;
       output.style.color = 'green';
       setLastScannedRow(existingRow);
+      showLastActionMessage(1, existingRow.cells[0].textContent.trim());
       return;
     }
 
@@ -1173,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     `;
     itemTableBody.appendChild(row);
     setLastScannedRow(row);
+    showLastActionMessage(1, row.cells[0].textContent.trim());
 
     if (matchFound) {
       output.textContent = matchedItem
