@@ -606,16 +606,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       output.textContent = reference
         ? `Removed last scan: decremented count for ${reference}.`
         : 'Removed last scan.';
+      setLastScannedRow(targetRow);
     } else {
       targetRow.remove();
       output.textContent = reference
         ? `Removed last scan: ${reference}.`
         : 'Removed last scan.';
       // Renumber the `#` column so it stays sequential after the removal.
-      Array.from(itemTableBody.querySelectorAll('tr')).forEach((row, i) => {
+      const remainingRows = Array.from(itemTableBody.querySelectorAll('tr'));
+      remainingRows.forEach((row, i) => {
         const indexCell = row.cells[0];
         if (indexCell) indexCell.textContent = i + 1;
       });
+      setLastScannedRow(remainingRows[remainingRows.length - 1] || null);
     }
     output.style.color = 'darkorange';
 
@@ -1091,6 +1094,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replaceAll("'", '&#039;');
   }
 
+  const LAST_SCANNED_ROW_CLASSES = ['bg-yellow-100', 'ring-2', 'ring-inset', 'ring-yellow-400'];
+
+  // Visually marks which row corresponds to the most recently scanned item
+  // (so it's unambiguous during a blind stock take) and scrolls it into
+  // view. Pass null to just clear the highlight (e.g. when the table is
+  // emptied out).
+  function setLastScannedRow(row) {
+    itemTableBody.querySelectorAll('tr').forEach(r => r.classList.remove(...LAST_SCANNED_ROW_CLASSES));
+    if (row) {
+      row.classList.add(...LAST_SCANNED_ROW_CLASSES);
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
   async function addRawRowToTable(entry) {
     const existingRow = Array.from(itemTableBody.querySelectorAll('tr'))
       .find(row => row.dataset.reference === entry.reference);
@@ -1100,6 +1117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       countCell.textContent = Number(countCell.textContent) + 1;
       output.textContent = `Incremented count for ${entry.referenceType} ${entry.reference}`;
       output.style.color = 'green';
+      setLastScannedRow(existingRow);
       return;
     }
 
@@ -1154,6 +1172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <td data-label="Count">1</td>
     `;
     itemTableBody.appendChild(row);
+    setLastScannedRow(row);
 
     if (matchFound) {
       output.textContent = matchedItem
