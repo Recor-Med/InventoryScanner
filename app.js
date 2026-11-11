@@ -1158,7 +1158,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     addRow.classList.add('cursor-pointer', 'hover:bg-gray-50');
     addRow.innerHTML = `
       <td class="border border-gray-300 px-2 py-1 text-green-600 font-bold text-lg" data-label="#">+</td>
-      <td class="border border-gray-300 px-2 py-1" colspan="4"></td>
+      <td class="border border-gray-300 px-2 py-1"></td>
+      <td class="border border-gray-300 px-2 py-1"></td>
+      <td class="border border-gray-300 px-2 py-1"></td>
+      <td class="border border-gray-300 px-2 py-1"></td>
     `;
     addRow.addEventListener('click', openManualEntryModal);
     itemTableBody.appendChild(addRow);
