@@ -57,6 +57,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let scanbotSDK = null;
   let barcodeScanner = null;
 
+  // Used by ensureAddRow() to pin a "+" manual-entry row to the bottom of
+  // the table. Declared early (rather than down near ensureAddRow itself)
+  // because populateInventoryProductTable()/ensureAddRow() can be invoked
+  // during the initial DOMContentLoaded flow, before the rest of the file
+  // has executed - a `const` declared later in the file would still be in
+  // its temporal dead zone at that point and throw a ReferenceError.
+  const MANUAL_ADD_ROW_ID = 'manualAddRow';
   let barcodeScannerController = null;
 
   // Guards against startScan() being invoked concurrently from multiple
@@ -1141,8 +1148,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     lastActionOutput.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
     lastActionOutput.classList.add(...(isAdd ? ['bg-green-100', 'text-green-800'] : ['bg-red-100', 'text-red-800']));
   }
-
-  const MANUAL_ADD_ROW_ID = 'manualAddRow';
 
   // Keeps a permanent "+" row pinned to the bottom of the table so the user
   // can always add an item by hand when a barcode can't be read. Safe to
