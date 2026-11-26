@@ -1490,18 +1490,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Any scanned/counted lot numbers that weren't matched to an expected
-    // inventory line at all (unexpected finds) - shown with no expected
-    // quantity so they're clearly flagged as not part of the loaded stock.
+    // inventory line at all (unexpected finds) - shown with an expected
+    // quantity of 0 (nothing in stock for this lot/serial) so they're
+    // clearly flagged as not part of the loaded stock.
     submittedCodes
       .filter(code => !matchedLotSerials.has(code.lotSerial))
       .forEach((code) => {
+        const countedQty = code.count;
+        const countClass = countedQty > 0 ? 'text-green-700 font-semibold' : '';
         rowsHtml.push(`
           <tr>
             <td class="border px-2 py-1">${escapeHtml(code.sku || '')}</td>
             <td class="border px-2 py-1">${escapeHtml(code.lotSerial || '')}</td>
             <td class="border px-2 py-1">${escapeHtml(code.expiry || 'N/A')}</td>
-            <td class="border px-2 py-1">N/A</td>
-            <td class="border px-2 py-1 text-orange-600 font-semibold">${code.count}</td>
+            <td class="border px-2 py-1">0</td>
+            <td class="border px-2 py-1 ${countClass}">${countedQty}</td>
             <td class="border px-2 py-1">Not in loaded stock</td>
           </tr>
         `);
