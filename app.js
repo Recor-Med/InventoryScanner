@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const expiredAlertMessage = document.getElementById('expiredAlertMessage');
   const expiredAlertOkBtn = document.getElementById('expiredAlertOkBtn');
   const itemTableBody = document.querySelector('#itemTable tbody');
+  const comparisonTableContainer = document.getElementById('comparisonTableContainer');
+  const comparisonTableBody = document.querySelector('#comparisonTable tbody');
 
   // The Scanbot SDK license key
   const licenseKey = window.LOCAL_SDK_LICENSE_KEY ||
@@ -1438,6 +1440,77 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   removeLastBtn.addEventListener('click', () => removeLastScan());
 
+  // Builds the post-submission comparison table showing, for every
+  // inventory line that was expected to be in stock for this account/
+  // contact, the quantity Salesforce had on record alongside what was
+  // actually counted during this stock take - plus any counted lot/serial
+  // numbers that weren't part of the expected inventory at all (e.g.
+  // scanned from a different lot than Salesforce had, or added manually).
+  // This mirrors the old non-blind view, but only surfaced after
+  // submission so the scan itself still stays blind.
+  function renderComparisonTable(submittedCodes) {
+    if (!comparisonTableContainer || !comparisonTableBody) return;
+
+    comparisonTableBody.innerHTML = '';
+
+    const matchedLotSerials = new Set();
+    const rowsHtml = [];
+
+    inventoryProductItems.forEach((item) => {
+      const match = submittedCodes.find(code => code.lotSerial && item.lotSerial && code.lotSerial === item.lotSerial)
+        || submittedCodes.find(code => !item.lotSerial && code.sku && item.sku && code.sku === item.sku && !matchedLotSerials.has(code.lotSerial));
+
+      const expectedQty = Number(item.quantity) || 0;
+      const countedQty = match ? match.count : 0;
+      if (match) matchedLotSerials.add(match.lotSerial);
+
+      let status;
+      let statusClass;
+      if (countedQty === expectedQty) {
+        status = 'Match';
+        statusClass = '';
+      } else if (countedQty > expectedQty) {
+        status = `Over by ${countedQty - expectedQty}`;
+        statusClass = 'text-green-700 font-semibold';
+      } else {
+        status = `Under by ${expectedQty - countedQty}`;
+        statusClass = 'text-red-600 font-semibold';
+      }
+
+      rowsHtml.push(`
+        <tr>
+          <td class="border px-2 py-1">${escapeHtml(item.sku || '')}</td>
+          <td class="border px-2 py-1">${escapeHtml(item.lotSerial || '')}</td>
+          <td class="border px-2 py-1">${formatDate(item.expiry) || 'N/A'}</td>
+          <td class="border px-2 py-1">${expectedQty}</td>
+          <td class="border px-2 py-1 ${statusClass}">${countedQty}</td>
+          <td class="border px-2 py-1">${status}</td>
+        </tr>
+      `);
+    });
+
+    // Any scanned/counted lot numbers that weren't matched to an expected
+    // inventory line at all (unexpected finds) - shown with no expected
+    // quantity so they're clearly flagged as not part of the loaded stock.
+    submittedCodes
+      .filter(code => !matchedLotSerials.has(code.lotSerial))
+      .forEach((code) => {
+        rowsHtml.push(`
+          <tr>
+            <td class="border px-2 py-1">${escapeHtml(code.sku || '')}</td>
+            <td class="border px-2 py-1">${escapeHtml(code.lotSerial || '')}</td>
+            <td class="border px-2 py-1">${escapeHtml(code.expiry || 'N/A')}</td>
+            <td class="border px-2 py-1">N/A</td>
+            <td class="border px-2 py-1 text-orange-600 font-semibold">${code.count}</td>
+            <td class="border px-2 py-1">Not in loaded stock</td>
+          </tr>
+        `);
+      });
+
+    comparisonTableBody.innerHTML = rowsHtml.join('');
+    comparisonTableContainer.classList.remove('hidden');
+  }
+
   submitBtn.addEventListener('click', () => {
     if (!confirmedAccount) {
       output.textContent = 'Missing account';
@@ -1485,6 +1558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     scanningView.classList.add('hidden');
     accountSection.classList.add('hidden');
 
+    if (comparisonTableContainer) comparisonTableContainer.classList.add('hidden');
     submissionResultView.classList.remove('hidden');
     submissionMessage.textContent = 'Submitting...';
     submissionMessage.classList.add('text-green-600');
@@ -1501,6 +1575,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const data = await res.json();
       if (res.ok) {
         submissionMessage.textContent = 'Table submitted successfully!';
+        renderComparisonTable(window.pendingSubmission.codes);
         itemTableBody.innerHTML = '';
         scannedCodes.length = 0;
         confirmedAccount = null;

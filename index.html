@@ -84,7 +84,27 @@
   <!-- Submission Result View -->
   <div id="submissionResultView" class="max-w-2xl mx-auto bg-white shadow p-6 rounded-lg hidden text-center">
     <p id="submissionMessage" class="text-lg font-semibold text-green-600"></p>
+
+    <div id="comparisonTableContainer" class="hidden mt-4 text-left">
+      <h2 class="text-lg font-semibold mb-2 text-center">Stock Count Results</h2>
+      <div class="overflow-x-auto">
+        <table id="comparisonTable" class="table-auto border-collapse w-full text-sm border border-gray-300 text-center">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="border border-gray-300 px-2 py-1">PRDS</th>
+              <th class="border border-gray-300 px-2 py-1">Lot/Serial</th>
+              <th class="border border-gray-300 px-2 py-1">Expiry Date</th>
+              <th class="border border-gray-300 px-2 py-1">In Stock</th>
+              <th class="border border-gray-300 px-2 py-1">Counted</th>
+              <th class="border border-gray-300 px-2 py-1">Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </div>
+
 
   <!-- Expired Product Alert Modal -->
   <div id="expiredAlertModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
