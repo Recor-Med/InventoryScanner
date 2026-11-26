@@ -1483,7 +1483,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <td class="border px-2 py-1">${escapeHtml(item.lotSerial || '')}</td>
           <td class="border px-2 py-1">${formatDate(item.expiry) || 'N/A'}</td>
           <td class="border px-2 py-1">${expectedQty}</td>
-          <td class="border px-2 py-1 ${statusClass}">${countedQty}</td>
+          <td class="border px-2 py-1"><span class="${statusClass}">${countedQty}</span></td>
           <td class="border px-2 py-1">${status}</td>
         </tr>
       `);
@@ -1504,7 +1504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td class="border px-2 py-1">${escapeHtml(code.lotSerial || '')}</td>
             <td class="border px-2 py-1">${escapeHtml(code.expiry || 'N/A')}</td>
             <td class="border px-2 py-1">0</td>
-            <td class="border px-2 py-1 ${countClass}">${countedQty}</td>
+            <td class="border px-2 py-1"><span class="${countClass}">${countedQty}</span></td>
             <td class="border px-2 py-1">Not in loaded stock</td>
           </tr>
         `);
