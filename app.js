@@ -1525,7 +1525,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const rows = Array.from(itemTableBody.querySelectorAll('tr[data-reference]'));
-    const codes = rows.map(row => ({
+    const scannedCodesList = rows.map(row => ({
       sku: row.dataset.prds || '',
       lotSerial: row.querySelector('[data-label="Lot/Serial"]').textContent.trim(),
       expiry: row.querySelector('[data-label="Expiry Date"]').textContent.trim(),
@@ -1533,10 +1533,42 @@ document.addEventListener('DOMContentLoaded', async () => {
       count: parseInt(row.querySelector('[data-label="Count"]').textContent.trim(), 10) || 0
     }));
 
-    if (codes.length === 0) {
+    if (scannedCodesList.length === 0) {
       output.textContent = 'No scanned items to submit';
       return;
     }
+
+    // The submission must record what was supposed to be in stock as well
+    // as what was actually counted - not just the lines that got scanned.
+    // Start from every expected inventory line (count defaulting to 0),
+    // then overlay the actual scanned counts on top by matching lot/serial
+    // (falling back to SKU for lines with no lot/serial). Any scanned rows
+    // that didn't match an expected line at all (found but not expected)
+    // are appended afterward so they're still submitted.
+    const matchedScannedIndexes = new Set();
+    const fullCodes = inventoryProductItems.map((item) => {
+      const scannedIndex = scannedCodesList.findIndex((code, idx) =>
+        !matchedScannedIndexes.has(idx) &&
+        ((code.lotSerial && item.lotSerial && code.lotSerial === item.lotSerial) ||
+          (!item.lotSerial && code.sku && item.sku && code.sku === item.sku))
+      );
+      const scanned = scannedIndex !== -1 ? scannedCodesList[scannedIndex] : null;
+      if (scanned) matchedScannedIndexes.add(scannedIndex);
+
+      return {
+        sku: item.sku || '',
+        lotSerial: item.lotSerial || '',
+        expiry: scanned ? scanned.expiry : formatDate(item.expiry),
+        quantity: item.quantity || 0,
+        count: scanned ? scanned.count : 0,
+      };
+    });
+
+    scannedCodesList.forEach((code, idx) => {
+      if (!matchedScannedIndexes.has(idx)) {
+        fullCodes.push(code);
+      }
+    });
 
     window.pendingSubmission = {
       account: confirmedAccount,
@@ -1544,7 +1576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       recordType: confirmedRecordType,
       accountId: confirmedRecordType === 'account' ? confirmedRecordId : null,
       contactId: confirmedRecordType === 'contact' ? confirmedRecordId : null,
-      codes
+      codes: fullCodes
     };
 
     tableSection.classList.add('hidden');
